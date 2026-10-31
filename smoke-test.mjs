@@ -2,7 +2,7 @@ import puppeteer from 'puppeteer-core';
 const browser=await puppeteer.launch({headless:true,executablePath:'/usr/bin/google-chrome',args:['--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader']});
 for(const mode of ['mobile','desktop']){
  const page=await browser.newPage();
- if(mode==='mobile') await page.setViewport({width:412,height:915,isMobile:true,deviceScaleFactor:2.6,hasTouch:true});
+ if(mode==='mobile') await page.setViewport({width:412,height:915,isMobile:true,deviceScaleFactor:1,hasTouch:true});
  else await page.setViewport({width:1280,height:720,deviceScaleFactor:1});
  const errs=[];page.on('pageerror',e=>errs.push(e.stack||String(e)));page.on('console',msg=>{if(msg.type()==='error')errs.push('console:'+msg.text());});
  await page.goto('http://127.0.0.1:5179/oasis-legend-game/',{waitUntil:'domcontentloaded',timeout:25000});

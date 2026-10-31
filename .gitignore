@@ -6,3 +6,7 @@ dist/
 check-*.png
 visual-inspect.mjs
 debug-hero.mjs
+
+acceptance-v4.mjs
+targeted-v4.mjs
+v4-*.png

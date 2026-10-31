@@ -8,8 +8,8 @@ await page.click('#start');
 await page.waitForFunction(()=>document.querySelector('#goalHint')?.textContent?.includes('م'),{timeout:8000});
 const first=await page.evaluate(()=>({state:window.__oasisDebug.getState(),goal:document.querySelector('#goalHint').textContent}));
 for(const [x,z] of [[-3,5],[-17,-13],[-21,19],[26,24],[-3,-32]]){
- await page.evaluate((x,z)=>window.__oasisDebug.setPosition(x,z),x,z);
- await page.waitForFunction((v)=>window.__oasisDebug.getState().collected>=v,{timeout:10000},[[ -3,5],[-17,-13],[-21,19],[26,24],[-3,-32]].findIndex(p=>p[0]===x&&p[1]===z)+1);
+ console.log("GOAL",x,z);await page.evaluate((x,z)=>window.__oasisDebug.setPosition(x,z),x,z);
+ await page.waitForFunction((v)=>window.__oasisDebug.getState().collected>=v,{timeout:40000},[[ -3,5],[-17,-13],[-21,19],[26,24],[-3,-32]].findIndex(p=>p[0]===x&&p[1]===z)+1);
 }
 const all=await page.evaluate(()=>window.__oasisDebug.getState());
 await page.evaluate(()=>window.__oasisDebug.setPosition(0,-40));

@@ -68,33 +68,96 @@ function makeGroundShadow(scene,player){
  const o=new THREE.Mesh(new THREE.PlaneGeometry(1.9,1.25),m);o.rotation.x=-Math.PI/2;o.position.y=.031;scene.add(o);
  return dt=>{o.position.x=player.position.x;o.position.z=player.position.z;o.material.opacity=Math.max(.15,.95-player.position.y*.16);o.scale.setScalar(1+player.position.y*.11)};
 }
-export function attachSaudiHero({target,model,scene,clipName='walk',quality='medium'}){
+export function attachSaudiHero({target,model,scene,clipName='walk',quality='medium',variant='man',color=0xece4d5}){
  const robeRoot=new THREE.Group();robeRoot.name='Saudi_thobe';target.add(robeRoot);
  const costume={root:robeRoot,mode:'full',model,source:'CC0 high-detail humanoid with procedural Saudi thobe and shemagh'};
- const robe=addMesh(robeRoot,robeGeometry(),robeMat);
+ const outfitMat=variant==='woman'?cloth(0x1f2526):cloth(color);
+ const robe=addMesh(robeRoot,robeGeometry(),outfitMat);
+ const baseHem=robe.geometry.attributes.position.array.slice();
+ const hemPos=robe.geometry.attributes.position;
+ // Cloth is driven each frame by the animated hip/ankle skeleton, not a static rigid cylinder.
+ const hemTrim=addMesh(robeRoot,new THREE.TorusGeometry(.49,.012,5,56),variant==='woman'?cloth(0x404b4c):cuffMat,0,.20,0);hemTrim.rotation.x=Math.PI/2;
+ // Under-layer fills the garment opening so hidden thighs never flash through at a long stride.
+ const liner=addMesh(robeRoot,new THREE.CylinderGeometry(.43,.455,.34,40,1,true),outfitMat,0,.24,0);
+ liner.castShadow=false;
+
  const collar=addMesh(robeRoot,new THREE.TorusGeometry(.17,.026,8,28),cuffMat,0,2.175,-.05);collar.rotation.x=Math.PI/2;
  // Tailored placket and pearl buttons (front is -Z in this runtime).
  const placket=addMesh(robeRoot,new THREE.BoxGeometry(.043,.5,.018),cuffMat,0,1.94,-.37);
  for(let i=0;i<4;i++)addMesh(robeRoot,new THREE.SphereGeometry(.019,10,8),cloth(0xf5ecda,.5),0,1.78+i*.12,-.392);
  const sleeveGeo=new THREE.CylinderGeometry(.155,.125,1,18,5);
- const sleeves=[addMesh(robeRoot,sleeveGeo,robeMat),addMesh(robeRoot,sleeveGeo,robeMat)];
+ const sleeves=[addMesh(robeRoot,sleeveGeo,outfitMat),addMesh(robeRoot,sleeveGeo,outfitMat)];
  const cuffs=[addMesh(robeRoot,new THREE.TorusGeometry(.135,.024,8,18),cuffMat),addMesh(robeRoot,new THREE.TorusGeometry(.135,.024,8,18),cuffMat)];
- const headBand=addMesh(robeRoot,new THREE.TorusGeometry(.285,.047,9,40),black,0,2.79,0);
+ const headBand=addMesh(robeRoot,new THREE.TorusGeometry(.285,.047,9,40),black,0,2.79,0);headBand.visible=variant!=='woman';
  headBand.rotation.x=Math.PI/2;
- const cap=addMesh(robeRoot,new THREE.SphereGeometry(.285,26,12,0,Math.PI*2,0,Math.PI*.56),new THREE.MeshStandardMaterial({map:textureScarf,color:0xffffff,side:THREE.DoubleSide,roughness:.95}),0,2.7,0);
- const drapeMat=new THREE.MeshStandardMaterial({map:textureScarf,color:0xffffff,roughness:1,side:THREE.DoubleSide});
+ const headCloth=variant==='woman'?new THREE.MeshStandardMaterial({color:0x222b32,roughness:.92,side:THREE.DoubleSide}):new THREE.MeshStandardMaterial({map:textureScarf,color:0xffffff,side:THREE.DoubleSide,roughness:.95});
+ const cap=addMesh(robeRoot,new THREE.SphereGeometry(.295,26,12,0,Math.PI*2,0,Math.PI*.57),headCloth,0,2.7,0);
+ const drapeMat=variant==='woman'?headCloth:new THREE.MeshStandardMaterial({map:textureScarf,color:0xffffff,roughness:1,side:THREE.DoubleSide});
  const drapes=[addMesh(robeRoot,headDrapeGeometry(-1),drapeMat),addMesh(robeRoot,headDrapeGeometry(1),drapeMat)];
  const bones={};
  model.traverse(o=>{if(o.isBone)bones[o.name]=o;});
  const temp=new THREE.Vector3(),temp2=new THREE.Vector3();
+ // Real leg mesh is inside the thobe. Remove occluded lower-leg triangles
+ // from a *clone* of the skinned geometry; keep face, hands, forearms visible.
+ // This prevents the leg from protruding through the moving robe.
+ const removedParts=[];
+ model.traverse(o=>{
+  if(!o.isSkinnedMesh||!o.geometry?.getAttribute('position'))return;
+  const geometry=o.geometry.clone(),position=geometry.getAttribute('position');
+  const idx=geometry.index,indices=idx?Array.from(idx.array):Array.from({length:position.count},(_,i)=>i);
+  const kept=[];
+  for(let i=0;i<indices.length;i+=3){
+   let lower=0,inner=0;
+   for(let j=0;j<3;j++){
+    const vi=indices[i+j],x=position.getX(vi),y=position.getY(vi);
+    if(y<.97)lower++;
+    if(Math.abs(x)<.38)inner++;
+   }
+   if(lower>=2&&inner>=2)continue;
+   kept.push(indices[i],indices[i+1],indices[i+2]);
+  }
+  if(kept.length>0&&kept.length<indices.length){
+   geometry.setIndex(kept);geometry.computeBoundingSphere();
+   o.geometry=geometry;removedParts.push({before:indices.length/3,after:kept.length/3});
+  }
+ });
+ const sandals=[];
+ for(const side of [-1,1]){
+  const shoe=addMesh(robeRoot,new THREE.CapsuleGeometry(.103,.12,4,8),cloth(0x65432f,.7),side*.24,.09,-.13);
+  shoe.scale.set(1,.36,1.75);sandals.push(shoe);
+ }
+
  function getPosition(bone,fall) {
   if(!bone)return fall.clone();
   bone.getWorldPosition(temp);
   return robeRoot.worldToLocal(temp.clone());
  }
  function tick(dt,elapsed){
-  const sway=Math.sin(elapsed*2.5)*.013;
+  const footL=getPosition(bones.LeftFoot,v3(-.22,.1,0));
+  const footR=getPosition(bones.RightFoot,v3(.22,.1,0));
+  const hip=getPosition(bones.Hips,v3(0,1.28,0));
+  const speed=Math.min(.3,Math.max(0,Math.abs(footL.z-footR.z))*.25);
+  const sway=Math.max(-.07,Math.min(.07,(hip.x)*.19))+.012*Math.sin(elapsed*2.3);
   robe.rotation.z=sway;
+  const positions=hemPos.array;
+  for(let i=0;i<positions.length;i+=3){
+   const x=baseHem[i],y=baseHem[i+1],z=baseHem[i+2];
+   const heightEffect=Math.pow(Math.max(0,(1.25-y)/1.12),1.4);
+   const side=x<0?0:1;
+   const foot=side===0?footL:footR;
+   const theta=Math.atan2(x,z);
+   const flutter=.016*Math.sin(theta*9+elapsed*5)*heightEffect;
+   const legF=Math.max(-.20,Math.min(.20,foot.z*.11))*heightEffect;
+   positions[i]=x+Math.min(.05,Math.max(-.05,foot.x*.07))*heightEffect;
+   positions[i+1]=y+Math.sin(theta*7+elapsed*5)*.015*heightEffect;
+   positions[i+2]=z+(legF+flutter)*heightEffect;
+  }
+  hemPos.needsUpdate=true;robe.geometry.computeVertexNormals();
+  hemTrim.position.z=(footL.z+footR.z)*.035;
+  for(let i=0;i<2;i++){
+   const f=i===0?footL:footR;
+   sandals[i].position.set(Math.max(-.5,Math.min(.5,f.x)),Math.max(.075,Math.min(.24,f.y)),Math.max(-.3,Math.min(.3,f.z)));
+  }
   if(bones.LeftArm&&bones.LeftHand&&bones.RightArm&&bones.RightHand){
    for(const [k,side] of ['Left','Right'].entries()){
     const shoulder=getPosition(bones[side+'Arm'],v3(side==='Left'?.55:-.55,2.05,0));
@@ -116,6 +179,6 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   for(const o of drapes)o.position.copy(off);
  }
  const shadow=makeGroundShadow(scene,target);
- return {...costume,tick:(dt,t)=>{tick(dt,t);shadow(dt);}};
+ return {...costume,removedParts,variant,tick:(dt,t)=>{tick(dt,t);shadow(dt);}};
 }
 

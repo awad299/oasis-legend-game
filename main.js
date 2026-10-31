@@ -56,9 +56,9 @@ const sky=mesh(skyG,skyM,0,0,0,scene,false);
 const sunDisc=S(7,new THREE.MeshBasicMaterial({color:0xfff2cb,fog:false}),-80,58,-100,scene,14,10);
 function applyQuality(){
  const low=quality==='low',high=quality==='high';
- renderer.setPixelRatio(Math.min(devicePixelRatio,low?1:high?1.8:isMobile?1.25:1.55));
+ renderer.setPixelRatio(Math.min(devicePixelRatio,low?1:high?(isMobile?1.45:1.8):isMobile?1.06:1.5));
  renderer.shadowMap.enabled=!low;
- sun.shadow.mapSize.set(high?2048:1024,high?2048:1024);
+ sun.shadow.mapSize.set(high?(isMobile?1024:2048):(isMobile?512:1024),high?(isMobile?1024:2048):(isMobile?512:1024));
  sun.shadow.map?.dispose();sun.shadow.map=null;
  if(renderer.shadowMap)renderer.shadowMap.needsUpdate=true;
  resize();
@@ -136,6 +136,8 @@ function windowOn(g,x,y,z,front=true){
  B(.78,1.1,.16,wood,x,y,z+(front?.1:-.1),g);
  B(.075,1.22,.21,bronze,x,y,z+(front?.2:-.2),g);
  B(.8,.09,.22,bronze,x,y+.02,z+(front?.22:-.22),g);
+ for(let v of [-.22,0,.22])B(.045,1.03,.08,mat(0x7b5a3d),x+v,y,z+.23,g).castShadow=false;
+ for(let h of [-.25,.23])B(.81,.048,.08,mat(0x7b5a3d),x,y+h,z+.23,g).castShadow=false;
  let arch=C(.55,.55,.12,brick,x,y+.74,z,g,12);arch.rotation.x=Math.PI/2;arch.castShadow=false;
 }
 function house(x,z,w,d,h,style=0,rotation=0){
@@ -174,7 +176,7 @@ function arch(x,z,width,height,depth,scale=1){
  for(let i=0;i<5;i++)B(.45,.4,depth+.4,brick,(-2+i)*width/4,height+.89,0,g);
  return g;
 }
-arch(-11,8,7.3,4.6,1.8);
+arch(-11,8,7.3,4.6,1.8);arch(11,8,7.3,4.6,1.8);
 arch(0,-42,8.6,7,2.7);
 const doorLeft=B(4.3,5.4,.32,wood,-2.16,3,-42);
 const doorRight=B(4.3,5.4,.32,wood,2.16,3,-42);
@@ -324,6 +326,38 @@ async function installPremiumPalmGroves(){
   avatarLoad.premiumPalms=places.length;
  }catch(err){avatarLoad.premiumPalmError=String(err);console.warn('Premium palm fallback',err);}
 }
+// Hero courtyard: sandstone edging, woven benches and hanging market lanterns.
+function courtyardVignette(){
+ const g=new THREE.Group();scene.add(g);
+ const edgeGeo=new THREE.BoxGeometry(.58,.12,.68);
+ const edgeTiles=new THREE.InstancedMesh(edgeGeo,stone,76);edgeTiles.castShadow=false;edgeTiles.receiveShadow=true;
+ const dummy=new THREE.Object3D();let i=0;
+ for(let z=-31;z<=30;z+=1.65)for(const x of [-4.73,4.73]){
+  dummy.position.set(x,.045,z);dummy.rotation.set(0,(Math.round(z)%3)*.028,0);dummy.scale.set(1,1,1);dummy.updateMatrix();edgeTiles.setMatrixAt(i++,dummy.matrix);
+ }
+ edgeTiles.count=i;edgeTiles.instanceMatrix.needsUpdate=true;g.add(edgeTiles);
+ for(const side of [-1,1])for(const z of [12,23]){
+  const x=side*7.2;
+  B(2.55,.18,.70,wood,x,.7,z,g);
+  B(2.5,.65,.14,wood,x,1.12,z+.32,g);
+  for(let dx of [-1,1])B(.13,.67,.14,wood,x+dx*1.1,.36,z+.15,g);
+  for(let dx of [-.72,0,.72])B(.05,.02,.65,bronze,x+dx,.806,z,g).castShadow=false;
+ }
+ const glass=new THREE.MeshBasicMaterial({color:0xffd78b});
+ for(const z of [6,17,25])for(const x of [-6.2,6.2]){
+  C(.095,.13,1.9,wood,x,.95,z,g,7);
+  C(.29,.20,.08,bronze,x,1.98,z,g,8);
+  C(.19,.19,.52,glass,x,1.62,z,g,6).castShadow=false;
+  C(.27,.27,.10,bronze,x,1.32,z,g,8);
+ }
+ for(let j=0;j<6;j++){
+  const x=-10.3+j*4.15,z=8.8+Math.sin(j*.5)*.10;
+  const matBanner=mat(j%3===0?0x8b5640:j%3===1?0x446d62:0xc1a06d);
+  const banner=mesh(new THREE.PlaneGeometry(.6,1),new THREE.MeshStandardMaterial({color:matBanner.color,side:THREE.DoubleSide,roughness:1}),x,4.65,z,g,false);
+  banner.rotation.y=Math.sin(j*.5)*.1;
+ }
+}
+courtyardVignette();
 // A watchtower beside the old gate
 const tower=new THREE.Group();tower.position.set(14,0,-48);scene.add(tower);
 C(3.6,4.2,14,wallMat,0,7,0,tower,16);
@@ -392,7 +426,7 @@ const npcs=[];
 function npc(x,z,name,title,dialogue,color,icon){
  const p=person(color,0xf2e7cd,R(.93,1.06));p.position.set(x,0,z);p.rotation.y=R(-3,3);scene.add(p);
  const label=document.createElement('canvas');label.width=512;label.height=128;const ctx=label.getContext('2d');ctx.fillStyle='rgba(14,47,44,.91)';ctx.beginPath();ctx.roundRect(8,14,496,98,28);ctx.fill();ctx.strokeStyle='#e6c47d';ctx.lineWidth=4;ctx.stroke();ctx.fillStyle='#fff3d8';ctx.font='bold 53px Tajawal, sans-serif';ctx.textAlign='center';ctx.fillText(name,256,86);
- const tex=new THREE.CanvasTexture(label);const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true}));sp.position.set(0,3.52,0);sp.scale.set(3.4,.85,1);p.add(sp);
+ const tex=new THREE.CanvasTexture(label);const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true}));sp.position.set(0,3.52,0);sp.scale.set(2.35,.58,1);p.add(sp);
  npcs.push({x,z,name,title,dialogue,icon,p,sp});
 }
 npc(-8,1,'سالم','دليل الواحة','كان البرج يضيء القرية كل مساء. ابحث عن خمس شظايا متوهجة متناثرة قرب السوق والواحة والممرات. إذا جمعتها، ستستجيب البوابة القديمة لك.',0x376d67,'✦');
@@ -437,7 +471,7 @@ async function loadAnimatedCast(){
 }
 async function upgradeHero(){
  try{
-  const src=await loadCharacterModel('highres/man_rigged');
+  const src=await loadCharacterModel('highres/man_mobile');
   const model=cloneSkinned(src.scene);
   const box=new THREE.Box3().setFromObject(model),height=box.getSize(new THREE.Vector3()).y;
   if(!height)throw new Error('high-detail mesh missing bounds');
@@ -452,9 +486,34 @@ async function upgradeHero(){
   const walk=walkClip?mixer.clipAction(walkClip):null,run=runClip?mixer.clipAction(runClip):null;
   if(walk){walk.play();walk.setEffectiveWeight(.08);}
   if(run){run.play();run.setEffectiveWeight(0);}
-  const costume=attachSaudiHero({target:player,model,scene});
+  const costume=attachSaudiHero({target:player,model,scene,variant:'man'});
   animatedActors.push({target:player,model,mixer,idle:null,walk,run,weight:0,role:'hero',costume,premium:true});
   avatarLoad.premium=true;avatarLoad.actors++;
+  // Shared skinned source and authored costume: one coherent Saudi cast, not medieval NPCs.
+  const variants=[
+    {variant:'man',color:0xdccdae}, // سالم
+    {variant:'man',color:0xbab4a4}, // ناصر
+    {variant:'man',color:0xe0d5bf}, // راشد
+    {variant:'woman',color:0x20272c}, // مها: عباية وغطاء رأس داكن
+    {variant:'man',color:0xe3d9be} // المعلم
+  ];
+  avatarLoad.saudiNPCs=0;
+  npcs.forEach((n,i)=>{
+   try {
+    const prev=n.actor;
+    if(prev){prev.mixer.stopAllAction();prev.model.visible=false;const index=animatedActors.indexOf(prev);if(index!==-1){animatedActors.splice(index,1);avatarLoad.actors--;}}
+    const humanoid=cloneSkinned(src.scene);humanoid.scale.setScalar(k);humanoid.position.y=-.01;humanoid.rotation.y=Math.PI;
+    humanoid.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.castShadow=!isMobile;o.receiveShadow=true;o.frustumCulled=false;}});
+    n.p.add(humanoid);
+    const npcMixer=new THREE.AnimationMixer(humanoid);
+    const npcWalk=walkClip?npcMixer.clipAction(walkClip):null;
+    if(npcWalk){npcWalk.play();npcWalk.setEffectiveWeight(.03);npcWalk.timeScale=.1;}
+    const npcCostume=attachSaudiHero({target:n.p,model:humanoid,scene,variant:variants[i].variant,color:variants[i].color});
+    n.actor={target:n.p,model:humanoid,mixer:npcMixer,idle:null,walk:npcWalk,weight:0,role:'npc',costume:npcCostume,premium:true};
+    animatedActors.push(n.actor);avatarLoad.actors++;avatarLoad.saudiNPCs++;
+    n.sp.position.y=3.25;
+   }catch(err){console.warn('Retained fallback NPC:',n.name,err);}
+  });
  }catch(error){avatarLoad.premium=false;avatarLoad.premiumError=String(error);console.warn('Premium character unavailable, retained original avatar',error);}
 }
 loadAnimatedCast().then(()=>upgradeHero());
@@ -542,7 +601,7 @@ function interact(){if(!active||inDialog||$('settings').classList.contains('acti
 
 // Controls: camera-relative velocity; stick up = forward, right = right
 const input={x:0,f:0,keys:new Set(),joyID:null,sprint:false};
-let yaw=0,pitch=.19,camDist=isMobile?8.8:10,jumpVelocity=0,vertical=0,velocity=new THREE.Vector3();
+let yaw=0,pitch=.19,camDist=isMobile?9.5:10,jumpVelocity=0,vertical=0,velocity=new THREE.Vector3();
 function joystickMove(e){const rect=$('joystick').getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2,rad=rect.width*.34;
  const dx=clamp((e.clientX-cx)/rad,-1,1),dy=clamp((e.clientY-cy)/rad,-1,1),size=Math.hypot(dx,dy),scale=size>1?1/size:1;
  input.x=dx*scale;input.f=-dy*scale;
@@ -625,21 +684,40 @@ function animate(){
  const lookAt=new THREE.Vector3(player.position.x,player.position.y+1.65,player.position.z);
  const dir=new THREE.Vector3(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
  const shoulder=new THREE.Vector3(Math.cos(yaw),0,Math.sin(yaw));
- const target=lookAt.clone().addScaledVector(dir,-camDist).addScaledVector(shoulder,isMobile?1.45:1.2);target.y=Math.max(1.6,target.y+camDist*.24);
- // Keep camera outside solid house footprints instead of clipping into walls.
- const deltaCam=target.clone().sub(lookAt),lengthCam=deltaCam.length();
- for(let d=1.3;d<lengthCam;d+=.35){const pt=lookAt.clone().addScaledVector(deltaCam,d/lengthCam);if(pt.y>8)continue;const hit=blockers.some(b=>Math.abs(pt.x-b.x)<b.hw&&Math.abs(pt.z-b.z)<b.hd);if(hit){target.copy(lookAt).addScaledVector(deltaCam,Math.max(0.4,(d-.9)/lengthCam));break;}}
-
- camera.position.lerp(target,Math.min(1,dt*7));camera.lookAt(lookAt.clone().addScaledVector(shoulder,.32));
+ // Collision-aware third-person camera: sweep through buildings AND other characters.
+ // When a nearby wall/person obstructs the orbit, rise above the shoulder rather
+ // than forcing a first-person zoom into the hero's body.
+ function cameraHit(from,to){
+  const seg=to.clone().sub(from),len=seg.length(),pos=new THREE.Vector3();
+  for(let d=1.1;d<len;d+=.30){
+   pos.copy(from).addScaledVector(seg,d/len);
+   const houseHit=pos.y<7.6&&blockers.some(b=>Math.abs(pos.x-b.x)<b.hw+.16&&Math.abs(pos.z-b.z)<b.hd+.16);
+   const npcHit=pos.y<3.6&&npcs.some(n=>n.p.visible&&Math.hypot(pos.x-n.x,pos.z-n.z)<.88&&Math.hypot(player.position.x-n.x,player.position.z-n.z)>1);
+   if(houseHit||npcHit)return d;
+  }
+  return Infinity;
+ }
+ let target=lookAt.clone().addScaledVector(dir,-camDist).addScaledVector(shoulder,isMobile?1.2:1.1);
+ target.y=Math.max(1.8,target.y+camDist*.24);
+ const dist=target.distanceTo(lookAt),hit=cameraHit(lookAt,target);
+ if(hit<dist){
+  // Never push the lens into the hero. Raise the boom above nearby buildings and
+  // keep a guaranteed readable minimum orbit, even during fast finger drags.
+  target=lookAt.clone().addScaledVector(dir,-Math.max(5.8,camDist*.78)).addScaledVector(shoulder,2.0);
+  target.y=Math.max(target.y,lookAt.y+(hit<4?6.2:4.1));
+  if(cameraHit(lookAt,target)<3.2)target.y=lookAt.y+8.5;
+ }
+ camera.position.lerp(target,Math.min(1,dt*6));
+ camera.lookAt(lookAt.clone().addScaledVector(shoulder,.22));
  for(let sh of shards){if(collected.has(sh.i))continue;
   sh.g.position.y=1.75+Math.sin(t*2.1+sh.i)*.25;
   sh.crystal.rotation.y+=dt*1.15;sh.crystal.rotation.x=Math.sin(t+sh.i)*.2;
   sh.ring.rotation.z+=dt*.9;sh.light.intensity=1.4+Math.sin(t*3+sh.i)*.5;}
  for(let i=0;i<rings.length;i++){let q=((t*.43+i/4)%1);rings[i].scale.setScalar(.4+3.1*q);rings[i].material.opacity=.45*(1-q);}
  for(let i=0;i<waterRings.length;i++){let q=((t*.3+i/4)%1);waterRings[i].scale.setScalar(.6+3.1*q);waterRings[i].material.opacity=.32*(1-q);}
- for(const a of animatedActors){a.mixer.update(dt);const desired=a.role==='hero'?Math.min(1,Math.hypot(velocity.x,velocity.z)/3.1):0;a.weight=ease(a.weight,desired,dt*6);if(a.premium){if(a.walk){a.walk.setEffectiveWeight(input.sprint?.04:Math.max(.1,a.weight));a.walk.timeScale=a.weight<.05?.06:1.08;}if(a.run)a.run.setEffectiveWeight(input.sprint?a.weight:0);a.costume.tick(dt,t);}else{if(a.walk){a.walk.setEffectiveWeight(a.weight);a.walk.timeScale=a.role==='hero'&&input.sprint?1.65:1.05;}if(a.idle)a.idle.setEffectiveWeight(1-a.weight);}}
- for(let n of npcs){const nd=Math.hypot(player.position.x-n.x,player.position.z-n.z);if(nd<5){const a=Math.atan2(player.position.x-n.x,-(player.position.z-n.z));const dd=((a-n.p.rotation.y+3*Math.PI)%(2*Math.PI))-Math.PI;n.p.rotation.y+=dd*Math.min(1,dt*3);}
- n.p.userData.rig.position.y=Math.sin(t*1.7+n.x)*.02;n.sp.material.opacity=clamp((10-Math.hypot(player.position.x-n.x,player.position.z-n.z))/5,0,1);}
+ for(const a of animatedActors){if(a.role==='npc'&&!a.target.visible)continue;a.mixer.update(dt);const desired=a.role==='hero'?Math.min(1,Math.hypot(velocity.x,velocity.z)/3.1):0;a.weight=ease(a.weight,desired,dt*6);if(a.premium){if(a.walk){a.walk.setEffectiveWeight(a.role==='hero'?(input.sprint?.04:Math.max(.03,a.weight)):.025);a.walk.timeScale=a.role==='hero'?(a.weight<.05?.035:1.08):.06;}if(a.run)a.run.setEffectiveWeight(a.role==='hero'&&input.sprint?a.weight:0);a.costume.tick(dt,t);}else{if(a.walk){a.walk.setEffectiveWeight(a.weight);a.walk.timeScale=a.role==='hero'&&input.sprint?1.65:1.05;}if(a.idle)a.idle.setEffectiveWeight(1-a.weight);}}
+ for(let n of npcs){const nd=Math.hypot(player.position.x-n.x,player.position.z-n.z);n.p.visible=nd<(isMobile?22:38);if(nd<5){const a=Math.atan2(player.position.x-n.x,-(player.position.z-n.z));const dd=((a-n.p.rotation.y+3*Math.PI)%(2*Math.PI))-Math.PI;n.p.rotation.y+=dd*Math.min(1,dt*3);}
+ n.p.userData.rig.position.y=Math.sin(t*1.7+n.x)*.02;n.sp.material.opacity=clamp((11-Math.hypot(player.position.x-n.x,player.position.z-n.z))/7,0,.78);}
  for(let p of palms)p.head.rotation.z=Math.sin(t*.7+p.x)*.032;for(let i=0;i<clouds.length;i++)clouds[i].position.x+=Math.sin(t*.08+i)*dt*.022;
  for(let m of motes){m.m.position.y=m.base+Math.sin(t*.8+m.phase)*.28;m.m.material.opacity=night?.5:.19;}
  for(let b of birds){let a=t*b.speed+b.a;b.g.position.set(Math.sin(a)*b.r,b.h+Math.sin(t*.8+b.a)*2,Math.cos(a)*b.r);b.g.rotation.y=a;}
@@ -653,5 +731,5 @@ function animate(){
 camera.position.set(0,7,25);
 animate();
 window.addEventListener('error',e=>{const el=$('fatal');el.hidden=false;el.textContent='خطأ في اللعبة: '+(e.message||'غير معروف');});
-window.__oasisDebug={getState:()=>({x:player.position.x,z:player.position.z,collected:collected.size,active,inDialog,quality,animated:avatarLoad}),setPosition:(x,z)=>player.position.set(x,0,z),acquireIndex:i=>acquire(shards[i]),renderer};
+window.__oasisDebug={getState:()=>({x:player.position.x,z:player.position.z,collected:collected.size,active,inDialog,quality,animated:avatarLoad}),setPosition:(x,z)=>player.position.set(x,0,z),acquireIndex:i=>acquire(shards[i]),setView:(a,b)=>{yaw=a;pitch=b},getCamera:()=>({distance:camera.position.distanceTo(player.position),camera:camera.position.toArray(),player:player.position.toArray()}),getCharacters:()=>animatedActors.map(a=>({role:a.role,premium:!!a.premium,variant:a.costume?.variant,removed:a.costume?.removedParts||[]})),renderer};
 

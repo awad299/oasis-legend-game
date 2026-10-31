@@ -15,3 +15,7 @@ These third-party meshes were not created by this project's author. The game's c
 - **Grab3D Man Base Mesh Rigged, CC0**: https://grab3d.com/models/characters/man-base-character/ — the real-proportions mesh, textures, skeleton and walk/run clips underpin the player character. Our custom thobe, shemagh, agal and sleeves are procedural additions in `saudi-hero.js`.
 - **Innerscene Palm, Detailed, CC0**: https://www.innerscene.com/tools/library/3d-parts/palm-detailed-a8777b8c — the 8.9 m tall detailed palm tree; submeshes are merged into a shared mesh and cloned across the village.
 - **ambientCG Plaster001 and PavingStones121, CC0**: https://ambientcg.com/view?id=Plaster001 and https://ambientcg.com/view?id=PavingStones121 — scanned plaster and paving surfaces. Albedo/normal maps are derived/converted to small WebP files; courtyard color is art-directed to sand tones.
+
+
+### Geometry simplification (version 4)
+`public/models/highres/man_mobile.glb` is the 2026-10-31 meshoptimizer-simplified derivative of the CC0 Grab3D rigged man asset documented above. 47,216 triangles remain before runtime garment occlusion, compared with 262,348 original. Skeleton and walk/run clips are retained. This asset is used for all six human actors to reduce transfer and rendering costs.
