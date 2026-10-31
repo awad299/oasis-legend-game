@@ -71,7 +71,7 @@ plane(57,6,pavement,0,-.069,17);plane(7,38,pavement,20,-.068,9);
 plane(7,34,pavement,-20,-.068,8);
 for(let i=0;i<320;i++){let x=R(-59,59),z=R(-57,58);if(Math.abs(x)<5||Math.abs(z+9)<6||Math.abs(z-17)<5)continue;
  let rock=B(R(.2,.6),R(.04,.14),R(.3,.6),mat(i%2?0xdab88a:0xbe9d70),x,.04,z);rock.rotation.y=R(0,6);rock.castShadow=false;}
-for(let i=0;i<28;i++){let a=i/28*Math.PI*2;let d=R(90,120),rad=R(8,22);let m=mesh(new THREE.IcosahedronGeometry(1,0),mat(i%3?0x9d9079:0x958c79),Math.sin(a)*d,4,Math.cos(a)*d);m.scale.set(rad,R(24,40),rad);m.rotation.y=R(0,6);m.castShadow=false;}
+for(let i=0;i<28;i++){let a=i/28*Math.PI*2;let d=R(117,149),rad=R(9,15);let m=mesh(new THREE.IcosahedronGeometry(1,0),mat(i%3?0x9d9079:0x958c79),Math.sin(a)*d,4,Math.cos(a)*d);m.scale.set(rad,R(15,23),rad);m.rotation.y=R(0,6);m.castShadow=false;}
 const plaza=plane(29,29,mat(0xd2b38a),0,-.047,-7);plaza.material.side=THREE.DoubleSide;
 for(let i=0;i<80;i++){let a=R(0,Math.PI*2),r=R(5,15),x=Math.sin(a)*r,z=-7+Math.cos(a)*r;
  if(r<5)continue;let tile=B(R(.65,2.1),.08,R(.5,1.5),mat(i%3===0?0xe5c79e:0xc5a783),x,.012,z);tile.rotation.y=a;tile.castShadow=false;}
@@ -269,7 +269,7 @@ function person(tunicColor=0x24766a,scarfColor=0xf5f0e5,size=1){
  B(.75,.1,.16,trim,0,1.05,-.23,rig);for(let p of [-.41,-.28,.28,.41]){const seam=B(.028,1.32,.04,mat(tunicColor),p,.83,-.29,rig);seam.rotation.z=p*.06;seam.castShadow=false;}
  const head=S(.30,skin,0,2.62,-.03,rig,16,12);head.scale.set(1,1.1,.98);
  S(.29,fabric,0,2.84,.02,rig,14,8).scale.set(1.15,.45,1.05);
- const veil=B(.6,.78,.085,fabric,0,2.50,.25,rig);veil.rotation.x=-.13;B(.68,.40,.08,fabric,0,2.55,.30,rig);
+ const scarfShape=new THREE.Shape();scarfShape.moveTo(-.26,2.86);scarfShape.lineTo(.26,2.86);scarfShape.quadraticCurveTo(.4,2.5,.43,2.22);scarfShape.lineTo(.18,2.04);scarfShape.lineTo(0,2.26);scarfShape.lineTo(-.18,2.04);scarfShape.lineTo(-.43,2.22);scarfShape.quadraticCurveTo(-.4,2.5,-.26,2.86);mesh(new THREE.ShapeGeometry(scarfShape),new THREE.MeshStandardMaterial({color:scarfColor,roughness:.98,side:THREE.DoubleSide}),0,0,.31,rig,false);
  torus(.32,.051,mat(0x2a2925),0,2.89,-.02,rig).rotation.x=0;
  for(let sx of [-1,1]){const eye=S(.032,black,sx*.115,2.63,-.30,rig,7,5);eye.castShadow=false;S(.055,skin2,sx*.31,2.61,-.01,rig,7,5);}
  S(.06,skin2,0,2.53,-.315,rig,7,5);
