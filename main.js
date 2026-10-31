@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
 import {attachSaudiHero} from './saudi-hero.js';
+import {targetSpeed, analogStrength, blendFactor, wrapAngle, cycleTime, WALK_SPEED, RUN_SPEED, WALK_STRIDE, RUN_STRIDE} from './locomotion.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 
 // LEGEND OF THE OASIS — original browser adventure, built for touch and desktop.
@@ -10,7 +11,7 @@ const isMobile = matchMedia('(pointer:coarse)').matches || innerWidth < 750;
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xb6c7b2, .0105);
 const camera = new THREE.PerspectiveCamera(isMobile ? 64 : 63, 1, .12, 200);
-const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+const renderer = new THREE.WebGLRenderer({antialias:!isMobile, powerPreference:'high-performance'});
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.10;
@@ -56,8 +57,8 @@ const sky=mesh(skyG,skyM,0,0,0,scene,false);
 const sunDisc=S(7,new THREE.MeshBasicMaterial({color:0xfff2cb,fog:false}),-80,58,-100,scene,14,10);
 function applyQuality(){
  const low=quality==='low',high=quality==='high';
- renderer.setPixelRatio(Math.min(devicePixelRatio,low?1:high?(isMobile?1.45:1.8):isMobile?1.06:1.5));
- renderer.shadowMap.enabled=!low;
+ renderer.setPixelRatio(Math.min(devicePixelRatio,low?(isMobile?.65:1):high?(isMobile?1.25:1.8):isMobile?.82:1.5));
+ renderer.shadowMap.enabled=!low&&(!isMobile||high);
  sun.shadow.mapSize.set(high?(isMobile?1024:2048):(isMobile?512:1024),high?(isMobile?1024:2048):(isMobile?512:1024));
  sun.shadow.map?.dispose();sun.shadow.map=null;
  if(renderer.shadowMap)renderer.shadowMap.needsUpdate=true;
@@ -484,10 +485,10 @@ async function upgradeHero(){
   const walkClip=src.animations.find(a=>a.name.toLowerCase()==='walk');
   const runClip=src.animations.find(a=>a.name.toLowerCase()==='run');
   const walk=walkClip?mixer.clipAction(walkClip):null,run=runClip?mixer.clipAction(runClip):null;
-  if(walk){walk.play();walk.setEffectiveWeight(.08);}
-  if(run){run.play();run.setEffectiveWeight(0);}
+  if(walk){walk.play();walk.setEffectiveWeight(0);walk.setEffectiveTimeScale(0);}
+  if(run){run.play();run.setEffectiveWeight(0);run.setEffectiveTimeScale(0);}
   const costume=attachSaudiHero({target:player,model,scene,variant:'man'});
-  animatedActors.push({target:player,model,mixer,idle:null,walk,run,weight:0,role:'hero',costume,premium:true});
+  animatedActors.push({target:player,model,mixer,idle:null,walk,run,weight:0,runBlend:0,gaitDistance:0,actualSpeed:0,role:'hero',costume,premium:true});
   avatarLoad.premium=true;avatarLoad.actors++;
   // Shared skinned source and authored costume: one coherent Saudi cast, not medieval NPCs.
   const variants=[
@@ -601,6 +602,7 @@ function interact(){if(!active||inDialog||$('settings').classList.contains('acti
 
 // Controls: camera-relative velocity; stick up = forward, right = right
 const input={x:0,f:0,keys:new Set(),joyID:null,sprint:false};
+const locomotion={speed:0,targetSpeed:0,distance:0,input:0};
 let yaw=0,pitch=.19,camDist=isMobile?9.5:10,jumpVelocity=0,vertical=0,velocity=new THREE.Vector3();
 function joystickMove(e){const rect=$('joystick').getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2,rad=rect.width*.34;
  const dx=clamp((e.clientX-cx)/rad,-1,1),dy=clamp((e.clientY-cy)/rad,-1,1),size=Math.hypot(dx,dy),scale=size>1?1/size:1;
@@ -662,25 +664,48 @@ function animate(){
  requestAnimationFrame(animate);
  const dt=Math.min(.05,clock.getDelta());t+=dt;
  if(active&&!inDialog){
-  let c=readControls();const moving=Math.hypot(c.x,c.f)>.025,spd=c.sprint?8.6:5.3;
-  const dx=Math.sin(yaw)*c.f+Math.cos(yaw)*c.x;
-  const dz=-Math.cos(yaw)*c.f+Math.sin(yaw)*c.x;
-  const tx=moving?dx*spd:0,tz=moving?dz*spd:0;
-  velocity.x=ease(velocity.x,tx,dt*(moving?9:12));velocity.z=ease(velocity.z,tz,dt*(moving?9:12));
+  const c=readControls();
+  const strength=analogStrength(c.x,c.f);
+  const wantSpeed=targetSpeed(c.x,c.f,c.sprint);
+  const invLen=strength>0?1/Math.max(.0001,Math.hypot(c.x,c.f)):0;
+  const dx=(Math.sin(yaw)*c.f+Math.cos(yaw)*c.x)*invLen;
+  const dz=(-Math.cos(yaw)*c.f+Math.sin(yaw)*c.x)*invLen;
+  // Turn toward the requested direction BEFORE moving. Sharp reversals slow the
+  // body until it faces the path, preventing sideways skating or moonwalking.
+  let turnThrottle=1;
+  if(wantSpeed>.04){
+    const desiredYaw=Math.atan2(dx,-dz);
+    const beforeTurn=wrapAngle(desiredYaw-player.rotation.y);
+    player.rotation.y+=beforeTurn*blendFactor(9.2,dt);
+    const remaining=wrapAngle(desiredYaw-player.rotation.y);
+    turnThrottle=.16+.84*Math.max(0,Math.cos(remaining));
+  }
+  velocity.x=ease(velocity.x,dx*wantSpeed*turnThrottle,blendFactor(wantSpeed>0?6.3:11,dt));
+  velocity.z=ease(velocity.z,dz*wantSpeed*turnThrottle,blendFactor(wantSpeed>0?6.3:11,dt));
   const oldX=player.position.x,oldZ=player.position.z;
   if(!collide(oldX+velocity.x*dt,oldZ))player.position.x+=velocity.x*dt;
   else velocity.x=0;
   if(!collide(player.position.x,oldZ+velocity.z*dt))player.position.z+=velocity.z*dt;
   else velocity.z=0;
-  const speed=Math.hypot(velocity.x,velocity.z);
-  if(speed>.3){let a=Math.atan2(velocity.x,-velocity.z);let delta=((a-player.rotation.y+Math.PI*3)%(Math.PI*2))-Math.PI;player.rotation.y+=delta*Math.min(1,dt*12);}
+  // Actual displacement, not requested speed, drives footsteps: no moonwalking against walls.
+  const moved=Math.hypot(player.position.x-oldX,player.position.z-oldZ);
+  const speed=dt>0?moved/dt:0;
+  locomotion.speed=speed;locomotion.targetSpeed=wantSpeed;locomotion.input=strength;
+  locomotion.distance+=moved;
+  // No extra rotation from lagging velocity: the controls already turned the body.
   jumpVelocity-=19*dt;vertical=Math.max(0,vertical+jumpVelocity*dt);if(vertical===0)jumpVelocity=0;player.position.y=vertical;
-  const rig=player.userData,sw=Math.sin(t*(c.sprint?12:8)),walk=Math.min(speed/5,1);
-  rig.legs[0].rotation.x=sw*.48*walk;rig.legs[1].rotation.x=-sw*.48*walk;
-  rig.arms[0].rotation.x=-sw*.45*walk;rig.arms[1].rotation.x=sw*.45*walk;
-  rig.rig.position.y=Math.sin(t*1.5)*.012+Math.abs(sw)*.045*walk;
+  // Primitive fallback only; the animated character uses distance-synced skeletal motion.
+  if(!avatarLoad.premium){
+   const rig=player.userData,stepPhase=locomotion.distance/WALK_STRIDE*Math.PI*2;
+   const amount=Math.min(1,speed/WALK_SPEED);
+   rig.legs[0].rotation.x=Math.sin(stepPhase)*.48*amount;
+   rig.legs[1].rotation.x=-Math.sin(stepPhase)*.48*amount;
+   rig.arms[0].rotation.x=-Math.sin(stepPhase)*.45*amount;
+   rig.arms[1].rotation.x=Math.sin(stepPhase)*.45*amount;
+   rig.rig.position.y=Math.abs(Math.sin(stepPhase))*.03*amount;
+  }
   for(let sh of shards){if(!collected.has(sh.i)&&Math.hypot(player.position.x-sh.x,player.position.z-sh.z)<1.8)acquire(sh);}
- } else velocity.multiplyScalar(Math.max(0,1-dt*8));
+ } else { velocity.multiplyScalar(Math.exp(-dt*14));locomotion.speed=0;locomotion.targetSpeed=0;locomotion.input=0; }
  const lookAt=new THREE.Vector3(player.position.x,player.position.y+1.65,player.position.z);
  const dir=new THREE.Vector3(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
  const shoulder=new THREE.Vector3(Math.cos(yaw),0,Math.sin(yaw));
@@ -715,7 +740,37 @@ function animate(){
   sh.ring.rotation.z+=dt*.9;sh.light.intensity=1.4+Math.sin(t*3+sh.i)*.5;}
  for(let i=0;i<rings.length;i++){let q=((t*.43+i/4)%1);rings[i].scale.setScalar(.4+3.1*q);rings[i].material.opacity=.45*(1-q);}
  for(let i=0;i<waterRings.length;i++){let q=((t*.3+i/4)%1);waterRings[i].scale.setScalar(.6+3.1*q);waterRings[i].material.opacity=.32*(1-q);}
- for(const a of animatedActors){if(a.role==='npc'&&!a.target.visible)continue;a.mixer.update(dt);const desired=a.role==='hero'?Math.min(1,Math.hypot(velocity.x,velocity.z)/3.1):0;a.weight=ease(a.weight,desired,dt*6);if(a.premium){if(a.walk){a.walk.setEffectiveWeight(a.role==='hero'?(input.sprint?.04:Math.max(.03,a.weight)):.025);a.walk.timeScale=a.role==='hero'?(a.weight<.05?.035:1.08):.06;}if(a.run)a.run.setEffectiveWeight(a.role==='hero'&&input.sprint?a.weight:0);a.costume.tick(dt,t);}else{if(a.walk){a.walk.setEffectiveWeight(a.weight);a.walk.timeScale=a.role==='hero'&&input.sprint?1.65:1.05;}if(a.idle)a.idle.setEffectiveWeight(1-a.weight);}}
+ for(const a of animatedActors){
+  if(a.role==='npc'&&!a.target.visible)continue;
+  if(a.premium&&a.role==='hero'){
+    const s=locomotion.speed;
+    // 1 gait cycle maps to 1.38 m walking, 2.35 m running. Pause exactly on stop.
+    a.gaitDistance=locomotion.distance;
+    const locomotionWeight=Math.min(1,s/.52);
+    a.weight=ease(a.weight,locomotionWeight,blendFactor(s>.02?9:13,dt));
+    a.runBlend=ease(a.runBlend,input.sprint&&s>WALK_SPEED*.85?1:0,blendFactor(7,dt));
+    if(a.walk){
+      a.walk.setEffectiveTimeScale(0);
+      a.walk.time=cycleTime(a.gaitDistance,WALK_STRIDE,a.walk.getClip().duration);
+      a.walk.setEffectiveWeight(a.weight*(1-a.runBlend));
+    }
+    if(a.run){
+      a.run.setEffectiveTimeScale(0);
+      a.run.time=cycleTime(a.gaitDistance,RUN_STRIDE,a.run.getClip().duration);
+      a.run.setEffectiveWeight(a.weight*a.runBlend);
+    }
+    a.mixer.update(dt);
+    a.costume.tick(dt,t,a.weight,locomotion.distance/WALK_STRIDE*Math.PI*2);
+  }else if(a.premium){
+    // Stationary NPCs do not play a slow walk cycle while standing.
+    if(a.walk){a.walk.setEffectiveTimeScale(0);a.walk.setEffectiveWeight(0);}
+    a.mixer.update(dt);a.costume.tick(dt,t,0,0);
+  }else{
+    a.mixer.update(dt);
+    a.weight=ease(a.weight,0,blendFactor(8,dt));
+    if(a.walk)a.walk.setEffectiveWeight(0);
+  }
+ }
  for(let n of npcs){const nd=Math.hypot(player.position.x-n.x,player.position.z-n.z);n.p.visible=nd<(isMobile?22:38);if(nd<5){const a=Math.atan2(player.position.x-n.x,-(player.position.z-n.z));const dd=((a-n.p.rotation.y+3*Math.PI)%(2*Math.PI))-Math.PI;n.p.rotation.y+=dd*Math.min(1,dt*3);}
  n.p.userData.rig.position.y=Math.sin(t*1.7+n.x)*.02;n.sp.material.opacity=clamp((11-Math.hypot(player.position.x-n.x,player.position.z-n.z))/7,0,.78);}
  for(let p of palms)p.head.rotation.z=Math.sin(t*.7+p.x)*.032;for(let i=0;i<clouds.length;i++)clouds[i].position.x+=Math.sin(t*.08+i)*dt*.022;
@@ -731,5 +786,5 @@ function animate(){
 camera.position.set(0,7,25);
 animate();
 window.addEventListener('error',e=>{const el=$('fatal');el.hidden=false;el.textContent='خطأ في اللعبة: '+(e.message||'غير معروف');});
-window.__oasisDebug={getState:()=>({x:player.position.x,z:player.position.z,collected:collected.size,active,inDialog,quality,animated:avatarLoad}),setPosition:(x,z)=>player.position.set(x,0,z),acquireIndex:i=>acquire(shards[i]),setView:(a,b)=>{yaw=a;pitch=b},getCamera:()=>({distance:camera.position.distanceTo(player.position),camera:camera.position.toArray(),player:player.position.toArray()}),getCharacters:()=>animatedActors.map(a=>({role:a.role,premium:!!a.premium,variant:a.costume?.variant,removed:a.costume?.removedParts||[]})),renderer};
+window.__oasisDebug={getState:()=>({x:player.position.x,z:player.position.z,collected:collected.size,active,inDialog,quality,animated:avatarLoad}),setPosition:(x,z)=>player.position.set(x,0,z),acquireIndex:i=>acquire(shards[i]),getLocomotion:()=>({...locomotion,character: animatedActors.find(a=>a.role==='hero'&&a.premium)? {walkWeight:animatedActors.find(a=>a.role==='hero'&&a.premium)?.walk?.getEffectiveWeight(),runWeight:animatedActors.find(a=>a.role==='hero'&&a.premium)?.run?.getEffectiveWeight(),walkTime:animatedActors.find(a=>a.role==='hero'&&a.premium)?.walk?.time,runTime:animatedActors.find(a=>a.role==='hero'&&a.premium)?.run?.time}:null}),setAnalog:(x,f)=>{input.x=x;input.f=f},setSprint:(yes)=>{input.sprint=yes},setView:(a,b)=>{yaw=a;pitch=b},getCamera:()=>({distance:camera.position.distanceTo(player.position),camera:camera.position.toArray(),player:player.position.toArray()}),getCharacters:()=>animatedActors.map(a=>({role:a.role,premium:!!a.premium,variant:a.costume?.variant,removed:a.costume?.removedParts||[]})),renderer};
 

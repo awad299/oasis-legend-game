@@ -132,12 +132,12 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   bone.getWorldPosition(temp);
   return robeRoot.worldToLocal(temp.clone());
  }
- function tick(dt,elapsed){
+ function tick(dt,elapsed,activity=0,gaitPhase=0){
   const footL=getPosition(bones.LeftFoot,v3(-.22,.1,0));
   const footR=getPosition(bones.RightFoot,v3(.22,.1,0));
   const hip=getPosition(bones.Hips,v3(0,1.28,0));
-  const speed=Math.min(.3,Math.max(0,Math.abs(footL.z-footR.z))*.25);
-  const sway=Math.max(-.07,Math.min(.07,(hip.x)*.19))+.012*Math.sin(elapsed*2.3);
+  const amount=Math.max(0,Math.min(1,activity));
+  const sway=Math.max(-.055,Math.min(.055,hip.x*.13))*.5*amount+.009*Math.sin(gaitPhase)*amount;
   robe.rotation.z=sway;
   const positions=hemPos.array;
   for(let i=0;i<positions.length;i+=3){
@@ -146,10 +146,10 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
    const side=x<0?0:1;
    const foot=side===0?footL:footR;
    const theta=Math.atan2(x,z);
-   const flutter=.016*Math.sin(theta*9+elapsed*5)*heightEffect;
-   const legF=Math.max(-.20,Math.min(.20,foot.z*.11))*heightEffect;
-   positions[i]=x+Math.min(.05,Math.max(-.05,foot.x*.07))*heightEffect;
-   positions[i+1]=y+Math.sin(theta*7+elapsed*5)*.015*heightEffect;
+   const flutter=.012*Math.sin(theta*9+gaitPhase)*heightEffect*amount;
+   const legF=Math.max(-.16,Math.min(.16,foot.z*.10))*heightEffect*amount;
+   positions[i]=x+Math.min(.04,Math.max(-.04,foot.x*.05))*heightEffect*amount;
+   positions[i+1]=y+Math.sin(theta*7+gaitPhase)*.013*heightEffect*amount;
    positions[i+2]=z+(legF+flutter)*heightEffect;
   }
   hemPos.needsUpdate=true;robe.geometry.computeVertexNormals();
@@ -179,6 +179,6 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   for(const o of drapes)o.position.copy(off);
  }
  const shadow=makeGroundShadow(scene,target);
- return {...costume,removedParts,variant,tick:(dt,t)=>{tick(dt,t);shadow(dt);}};
+ return {...costume,removedParts,variant,tick:(dt,t,activity=0,phase=0)=>{tick(dt,t,activity,phase);shadow(dt);}};
 }
 

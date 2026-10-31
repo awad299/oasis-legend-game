@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {analogStrength,targetSpeed,cycleTime,blendFactor,WALK_SPEED,RUN_SPEED,DEADZONE} from './locomotion.js';
+assert.equal(analogStrength(0,0),0);
+assert.equal(targetSpeed(.01,.01,false),0);
+assert.equal(targetSpeed(0,1,false),WALK_SPEED);
+assert.equal(targetSpeed(0,1,true),RUN_SPEED);
+assert.ok(targetSpeed(0,.4,false)<targetSpeed(0,1,false));
+assert.ok(targetSpeed(0,.4,false)>0);
+assert.ok(analogStrength(0,DEADZONE)<=.0000001);
+assert.ok(Math.abs(cycleTime(1.55,1.55,1))<1e-9);
+assert.ok(Math.abs(cycleTime(.775,1.55,1)-.5)<1e-9);
+assert.ok(blendFactor(9,.016)>0&&blendFactor(9,.016)<1);
+console.log('PASS 10 movement unit assertions; full walk:',WALK_SPEED,'m/s; run:',RUN_SPEED,'m/s');
