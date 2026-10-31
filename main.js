@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
 
 // LEGEND OF THE OASIS — original browser adventure, built for touch and desktop.
 const $ = id => document.getElementById(id);
@@ -41,8 +43,8 @@ function line(points,r,m,parent=scene){return mesh(new THREE.TubeGeometry(new TH
 function materialTexture(base,variation,lines=false){const cv=document.createElement('canvas');cv.width=cv.height=256;const c=cv.getContext('2d');c.fillStyle=base;c.fillRect(0,0,256,256);for(let i=0;i<3000;i++){let g=Math.round(R(0,255)),sz=R(.4,2.8);c.fillStyle='rgba('+g+','+g+','+g+','+R(.009,.036)+')';c.fillRect(R(0,256),R(0,256),sz,sz);}if(lines){for(let y=0;y<256;y+=47){c.fillStyle=variation;c.fillRect(0,y,256,2);for(let x=(y%94?35:0);x<256;x+=70)c.fillRect(x,y,2,45);}}const tex=new THREE.CanvasTexture(cv);tex.colorSpace=THREE.SRGBColorSpace;tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(2,2);return tex;}
 const wallMat=new THREE.MeshStandardMaterial({map:materialTexture('#d2b18a','#ad8c6a',true),color:0xffffff,roughness:1});
 const wallLight=new THREE.MeshStandardMaterial({map:materialTexture('#ddc39d','#baa184',false),color:0xffffff,roughness:1});
-const pavement=new THREE.MeshStandardMaterial({map:materialTexture('#dfbd90','#bb9164',true),roughness:1});
-const sandTex=new THREE.MeshStandardMaterial({map:materialTexture('#c8a46b','#c8a46b',false),roughness:1});
+const pavement=new THREE.MeshStandardMaterial({map:materialTexture('#dfbd90','#bb9164',true),roughness:1});pavement.map.repeat.set(7,45);
+const sandTex=new THREE.MeshStandardMaterial({map:materialTexture('#c8a46b','#c8a46b',false),roughness:1});sandTex.map.repeat.set(24,24);
 
 const hemi=new THREE.HemisphereLight(0xd7f2ff,0x8b6341,1.5);scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xffddad,2.8);sun.position.set(-36,57,-26);sun.castShadow=true;sun.shadow.camera.left=-58;sun.shadow.camera.right=58;sun.shadow.camera.top=58;sun.shadow.camera.bottom=-58;sun.shadow.camera.near=.2;sun.shadow.camera.far=130;sun.shadow.bias=-.00022;sun.shadow.normalBias=.018;scene.add(sun);scene.add(sun.target);
@@ -63,6 +65,13 @@ function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=i
 addEventListener('resize',resize);
 applyQuality();
 
+// Wispy high-altitude cloud layers soften the empty horizon.
+const cloudCanvas=document.createElement('canvas');cloudCanvas.width=cloudCanvas.height=128;
+const cloudCtx=cloudCanvas.getContext('2d'),cloudFade=cloudCtx.createRadialGradient(64,64,4,64,64,64);
+cloudFade.addColorStop(0,'rgba(255,251,233,.88)');cloudFade.addColorStop(.43,'rgba(255,250,230,.44)');cloudFade.addColorStop(1,'rgba(255,250,230,0)');
+cloudCtx.fillStyle=cloudFade;cloudCtx.fillRect(0,0,128,128);
+const cloudTexture=new THREE.CanvasTexture(cloudCanvas);
+const clouds=[];for(let i=0;i<11;i++){const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:cloudTexture,transparent:true,depthWrite:false,opacity:R(.22,.42)}));sprite.position.set(R(-85,85),R(28,46),R(-103,-55));sprite.scale.set(R(19,35),R(5,10),1);scene.add(sprite);clouds.push(sprite);}
 // Ground, layered paths, tiling and distant mountains
 plane(230,230,sandTex,0,-.12,0);
 const road=mat(0xd5b78d);
@@ -71,7 +80,23 @@ plane(57,6,pavement,0,-.069,17);plane(7,38,pavement,20,-.068,9);
 plane(7,34,pavement,-20,-.068,8);
 for(let i=0;i<320;i++){let x=R(-59,59),z=R(-57,58);if(Math.abs(x)<5||Math.abs(z+9)<6||Math.abs(z-17)<5)continue;
  let rock=B(R(.2,.6),R(.04,.14),R(.3,.6),mat(i%2?0xdab88a:0xbe9d70),x,.04,z);rock.rotation.y=R(0,6);rock.castShadow=false;}
-for(let i=0;i<28;i++){let a=i/28*Math.PI*2;let d=R(117,149),rad=R(9,15);let m=mesh(new THREE.IcosahedronGeometry(1,0),mat(i%3?0x9d9079:0x958c79),Math.sin(a)*d,4,Math.cos(a)*d);m.scale.set(rad,R(15,23),rad);m.rotation.y=R(0,6);m.castShadow=false;}
+// Broad multi-layer dune ridges instead of triangular cone-shaped mountains.
+function duneRidge(radius,frequency,baseColor){
+ const count=116,rows=4,positions=[],colors=[],indices=[];
+ const colorA=new THREE.Color(baseColor),colorB=colorA.clone().multiplyScalar(.84);
+ for(let i=0;i<=count;i++){
+  const a=i/count*Math.PI*2;
+  const waves=Math.sin(a*3.7+frequency)*.45+Math.sin(a*8.1+frequency*2)*.22+Math.sin(a*15.6+frequency*3)*.08;
+  const peak=13+waves*15;
+  const heights=[-.6,peak*.22,peak,1.3],radial=[radius-9,radius-1,radius+6,radius+13];
+  for(let j=0;j<rows;j++){positions.push(Math.sin(a)*radial[j],heights[j],Math.cos(a)*radial[j]);const c=colorA.clone().lerp(colorB,j/3);colors.push(c.r,c.g,c.b);}
+ }
+ for(let i=0;i<count;i++)for(let j=0;j<rows-1;j++){let a=i*rows+j,b=a+rows;indices.push(a,b,a+1,b,b+1,a+1);}
+ const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geo.setIndex(indices);geo.computeVertexNormals();
+ const ridge=mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,side:THREE.DoubleSide,flatShading:false}),0,-2,0);ridge.castShadow=false;
+}
+duneRidge(132,1.3,0xa19b86);
+duneRidge(165,2.7,0x778f91);
 const plaza=plane(29,29,mat(0xd2b38a),0,-.047,-7);plaza.material.side=THREE.DoubleSide;
 for(let i=0;i<80;i++){let a=R(0,Math.PI*2),r=R(5,15),x=Math.sin(a)*r,z=-7+Math.cos(a)*r;
  if(r<5)continue;let tile=B(R(.65,2.1),.08,R(.5,1.5),mat(i%3===0?0xe5c79e:0xc5a783),x,.012,z);tile.rotation.y=a;tile.castShadow=false;}
@@ -222,6 +247,25 @@ for(let i=0;i<55;i++){let a=R(0,7),x=R(-44,44),z=R(-40,45);if(Math.abs(x)<8&&Mat
  if(rnd()<.7){const grass=C(.02,.07,R(.32,.7),mat(i%2?0x8b9853:0xb4a369),x,.26,z);grass.rotation.x=R(-.24,.24);grass.castShadow=false;}
  else S(R(.13,.37),mat(0xb6ab86),x,.1,z).castShadow=false;}
 
+// CC0 authored rock and shrub meshes for visual variety, loaded asynchronously.
+async function loadNature(){
+ try{
+  const [rock,bush]=await Promise.all(['nature_rock','nature_bush'].map(loadCharacterModel));
+  for(let i=0;i<28;i++){
+   const isBush=i%3===0,asset=isBush?bush:rock;
+   const g=asset.scene.clone(true),bb=new THREE.Box3().setFromObject(g),h=Math.max(.1,bb.getSize(new THREE.Vector3()).y);
+   const targetH=isBush?R(.75,1.55):R(.36,1.05);
+   g.scale.setScalar(targetH/h);
+   g.rotation.y=R(-Math.PI,Math.PI);
+   let x,z;
+   if(i<15){const a=R(0,Math.PI*2),r=R(7.2,11.8);x=24+Math.cos(a)*r;z=21+Math.sin(a)*r;}
+   else{const a=R(0,Math.PI*2),r=R(30,47);x=Math.sin(a)*r;z=Math.cos(a)*r;}
+   g.position.set(x,-bb.min.y*targetH/h,z);
+   g.traverse(o=>{if(o.isMesh){o.castShadow=quality==='high';o.receiveShadow=true;}});
+   scene.add(g);
+  }
+ }catch(err){console.warn('Optional nature props unavailable',err);}
+}
 // A watchtower beside the old gate
 const tower=new THREE.Group();tower.position.set(14,0,-48);scene.add(tower);
 C(3.6,4.2,14,wallMat,0,7,0,tower,16);
@@ -299,8 +343,43 @@ npc(9,-32,'راشد','حارس البوابة','البوابة لا تُفتح �
 npc(19,13,'مها','مرشدة الواحة','الماء حياة الواحة. انظر إلى البركة، ثم ابحث عن البريق بين النخيل. تذكر أن كل رحلة تبدأ بخطوة.',0x8b5260,'☀');
 npc(15,-9,'المعلّم','حكيم الأرقام','هناك لغز صغير اختياري للزائر الذكي. إذا قسمت أربع قطع إلى مجموعتين متساويتين، فما الكسر الذي يمثل مجموعة واحدة؟',0x375e77,'◈');
 
+// Rigged, skinned and animated CC0 character assets. Old geometry remains a fallback.
+const animatedActors=[];
+const avatarLoad={ready:false,actors:0,error:null};
+const assetLoader=new GLTFLoader();
+async function loadCharacterModel(file){
+ return new Promise((resolve,reject)=>assetLoader.load(import.meta.env.BASE_URL+'models/'+file+'.glb',resolve,undefined,reject));
+}
+async function loadAnimatedCast(){
+ try{
+  // Reuse three source assets to avoid duplicate downloads.
+  const byFile={};
+  for(const f of ['player_priest','player_swordsman','player_archer'])byFile[f]=await loadCharacterModel(f);
+  function attach(target,file,role){
+   const src=byFile[file],model=cloneSkinned(src.scene);
+   model.updateMatrixWorld(true);
+   const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());
+   const scale=(role==='hero'?2.85:2.65)/(size.y||1);
+   model.scale.setScalar(scale);model.position.y=-bounds.min.y*scale-.32;model.rotation.y=Math.PI;
+   model.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true;}if((o.isMesh||o.isGroup)&&/Spellbook|Longbow|Sword|Shield|2H_Staff|Bow|Quiver/i.test(o.name))o.visible=false;});
+   target.userData.rig.visible=false;target.add(model);
+   const mixer=new THREE.AnimationMixer(model),idleClip=src.animations.find(c=>c.name==='Idle'),walkClip=src.animations.find(c=>c.name==='Walking_A');
+   const idle=idleClip?mixer.clipAction(idleClip):null,walk=walkClip?mixer.clipAction(walkClip):null;
+   if(idle){idle.play();idle.setEffectiveWeight(1);}
+   if(walk){walk.play();walk.setEffectiveWeight(0);}
+   const greetClip=src.animations.find(c=>c.name==='Spellcast_Shoot');const greet=greetClip?mixer.clipAction(greetClip):null;if(greet){greet.loop=THREE.LoopOnce;greet.clampWhenFinished=false;greet.setEffectiveWeight(.65);}const actor={target,model,mixer,idle,walk,greet,weight:0,role,file};
+   animatedActors.push(actor);avatarLoad.actors++;
+   return actor;
+  }
+  attach(player,'player_priest','hero');
+  const variants=['player_swordsman','player_priest','player_archer','player_priest','player_archer'];
+  npcs.forEach((n,i)=>{n.actor=attach(n.p,variants[i],'npc');});
+  avatarLoad.ready=true;
+ }catch(err){avatarLoad.error=String(err);console.error('Animated character load failed, using fallback',err);}
+}
+loadAnimatedCast();loadNature();
 // Quest shards — pickup is automatic near a 3D object
-const shardPositions=[[-12,-8], [13,-15],[-21,19],[26,24],[-3,-32]];
+const shardPositions=[[-3,5], [-17,-13],[-21,19],[26,24],[-3,-32]];
 const shards=[];
 for(let i=0;i<5;i++){const [x,z]=shardPositions[i],g=new THREE.Group();g.position.set(x,1.75,z);scene.add(g);
  const crystal=mesh(new THREE.OctahedronGeometry(.58),new THREE.MeshPhysicalMaterial({color:0xffe4a0,emissive:0xdba958,emissiveIntensity:1.6,metalness:.45,roughness:.16,clearcoat:.8}),0,0,0,g);
@@ -310,6 +389,38 @@ for(let i=0;i<5;i++){const [x,z]=shardPositions[i],g=new THREE.Group();g.positio
  const light=new THREE.PointLight(0xffc272,2.1,7);light.position.set(x,2,z);scene.add(light);
  if(collected.has(i)){g.visible=false;light.visible=false;}
  shards.push({g,crystal,ring,light,x,z,i});
+}
+// Persistent in-world objective beacon: bright enough to see from spawn.
+const beaconCV=document.createElement('canvas');beaconCV.width=beaconCV.height=128;
+const bctx=beaconCV.getContext('2d'),grad=bctx.createRadialGradient(64,64,3,64,64,63);
+grad.addColorStop(0,'rgba(255,226,159,0.55)');grad.addColorStop(.25,'rgba(253,198,78,.20)');grad.addColorStop(1,'rgba(253,185,69,0)');
+bctx.fillStyle=grad;bctx.fillRect(0,0,128,128);
+const beaconTexture=new THREE.CanvasTexture(beaconCV);
+const beacon=new THREE.Sprite(new THREE.SpriteMaterial({map:beaconTexture,depthTest:false,transparent:true,blending:THREE.AdditiveBlending,opacity:.8}));
+beacon.scale.set(3.0,6.2,1);scene.add(beacon);
+const beaconRing=torus(1.45,.07,new THREE.MeshBasicMaterial({color:0xffdfa2,transparent:true,opacity:.73}),0,.4,0);
+const goalHint=document.createElement('div');goalHint.id='goalHint';$('questbox').append(goalHint);
+function nearestGoal(){
+ if(finished)return null;
+ if(collected.size>=5)return {x:0,z:-42,gate:true};
+ const left=shards.filter(sh=>!collected.has(sh.i));
+ left.sort((a,b)=>Math.hypot(a.x-player.position.x,a.z-player.position.z)-Math.hypot(b.x-player.position.x,b.z-player.position.z));
+ return left[0]||null;
+}
+function updateGoal(){
+ const goal=nearestGoal();
+ beacon.visible=!!goal;beaconRing.visible=!!goal;
+ if(!goal){goalHint.textContent='✦ عادت الحياة إلى الواحة';return;}
+ const dx=goal.x-player.position.x,dz=goal.z-player.position.z;
+ const dist=Math.round(Math.hypot(dx,dz));
+ const bearing=Math.atan2(dx,-dz),diff=((bearing-yaw+3*Math.PI)%(2*Math.PI))-Math.PI;
+ const arrows=['↑','↗','→','↘','↓','↙','←','↖'];
+ const arrow=arrows[(Math.round(diff/(Math.PI/4))+8)%8];
+ goalHint.textContent=arrow+' '+(goal.gate?'بوابة البرج':'الشظية التالية')+' · '+AR(dist)+' م';
+ beacon.position.set(goal.x,4.2+Math.sin(t*2)*.45,goal.z);
+ beacon.material.opacity=.26+Math.sin(t*2)*.08;
+ beaconRing.position.set(goal.x,.45+Math.sin(t*2)*.1,goal.z);
+ beaconRing.rotation.z=t*.55;
 }
 function save(){try{localStorage.setItem('oasis_progress',JSON.stringify({crystals:[...collected],finished}));}catch{}}
 function updateQuest(){
@@ -329,7 +440,7 @@ function showDialog({icon='✦',who='أهل الواحة',title='رسالة',tex
 }
 const closeDialog=()=>{inDialog=false;$('dialogue').classList.remove('active');};
 $('dialogClose').onclick=closeDialog;
-function win(){if(collected.size!==5){toast('تحتاج إلى ٥ شظايا نور لفتح البوابة');return;}
+function win(){if(collected.size!==5){toast('اجمع الشظايا أولًا ثم عد إلى البوابة');return;}
  finished=true;doorLeft.position.x=-5.6;doorRight.position.x=5.6;save();updateQuest();playTone(860,.42);showDialog({icon:'✺',who:'نهاية الفصل الأول',title:'عاد النور إلى الواحة!',text:'توهّج البرج مجددًا بعد أن جمعت الشظايا الخمس. أنت الآن حارس نور الواحة. استمتع باستكشاف القرية، فقد أنجزت أول مهمة كاملة.'});}
 let nearby=null;
 function findNearby(){
@@ -345,7 +456,7 @@ function interact(){if(!active||inDialog||$('settings').classList.contains('acti
  if(!nearby){toast('اقترب من أحد أهل القرية أو من البوابة');return;}
  if(nearby.type==='gate'){win();return;}
  if(nearby.type==='fountain'){showDialog({icon:'◉',who:'ساحة القرية',title:'نافورة الحياة',text:'جُلب الماء إلى هذه الواحة من عيون قديمة. استرح قليلًا، ثم اذهب للبحث عن الشظايا الذهبية.'});return;}
- const n=nearby.o;showDialog({icon:n.icon,who:n.name,title:n.title,text:n.dialogue,answers:n.name==='المعلّم'?[{text:'١⁄٢',ok:true},{text:'١⁄٤',ok:false},{text:'٣⁄٤',ok:false}]:[]});
+ const n=nearby.o;if(n.actor?.greet){n.actor.greet.reset().play();}showDialog({icon:n.icon,who:n.name,title:n.title,text:n.dialogue,answers:n.name==='المعلّم'?[{text:'١⁄٢',ok:true},{text:'١⁄٤',ok:false},{text:'٣⁄٤',ok:false}]:[]});
 }
 
 // Controls: camera-relative velocity; stick up = forward, right = right
@@ -383,8 +494,8 @@ $('quality').addEventListener('change',e=>{quality=e.target.value;localStorage.s
 $('sensitivity').addEventListener('input',e=>{sensitivity=Number(e.target.value);localStorage.setItem('oasis_sensitivity',sensitivity);});
 $('soundBtn').onclick=()=>{soundOn=!soundOn;$('soundBtn').textContent='الصوت: '+(soundOn?'تشغيل':'إيقاف');};
 $('resetBtn').onclick=()=>{collected.clear();finished=false;doorLeft.position.x=-2.16;doorRight.position.x=2.16;save();for(let sh of shards){sh.g.visible=true;sh.light.visible=true;}updateQuest();toast('تمت إعادة تقدم المهمة');toggleSettings(false);};
-$('start').onclick=()=>{active=true;$('intro').classList.remove('active');toast('مرحبًا بك! اتجه نحو الشظايا الذهبية ✦');playTone(510,.3);};
-let minOpen=true;$('mapBtn').onclick=()=>{minOpen=!minOpen;$('minimap').style.display=minOpen?'block':'none';};
+$('start').onclick=()=>{active=true;$('intro').classList.remove('active');toast('✦ اتبع السهم الذهبي لجمع الشظية الأولى');playTone(510,.3);};
+let minOpen=!isMobile;$('minimap').style.display=minOpen?'block':'none';$('mapBtn').onclick=()=>{minOpen=!minOpen;$('minimap').style.display=minOpen?'block':'none';};
 $('sunBtn').onclick=()=>{night=!night;sun.intensity=night?1.1:2.8;hemi.intensity=night?.85:1.5;renderer.toneMappingExposure=night?.9:1.10;
  scene.fog.color.setHex(night?0x425f73:0xb6c7b2);skyM.uniforms.top.value.setHex(night?0x0a1632:0x4b9ebd);skyM.uniforms.middle.value.setHex(night?0x31506d:0x99d3d6);skyM.uniforms.bottom.value.setHex(night?0x7d8c88:0xf4d8a1);sunDisc.visible=!night;
  $('sunBtn').textContent=night?'☾':'☀';for(let l of lamps){l.light.intensity=night?1.4:.38;}gateLight.intensity=night?5:collected.size===5?5.2:2;};
@@ -432,27 +543,34 @@ function animate(){
  } else velocity.multiplyScalar(Math.max(0,1-dt*8));
  const lookAt=new THREE.Vector3(player.position.x,player.position.y+1.65,player.position.z);
  const dir=new THREE.Vector3(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
- const target=lookAt.clone().addScaledVector(dir,-camDist);target.y=Math.max(1.6,target.y+camDist*.24);
- camera.position.lerp(target,Math.min(1,dt*7));camera.lookAt(lookAt);
+ const shoulder=new THREE.Vector3(Math.cos(yaw),0,Math.sin(yaw));
+ const target=lookAt.clone().addScaledVector(dir,-camDist).addScaledVector(shoulder,isMobile?1.45:1.2);target.y=Math.max(1.6,target.y+camDist*.24);
+ // Keep camera outside solid house footprints instead of clipping into walls.
+ const deltaCam=target.clone().sub(lookAt),lengthCam=deltaCam.length();
+ for(let d=1.3;d<lengthCam;d+=.35){const pt=lookAt.clone().addScaledVector(deltaCam,d/lengthCam);if(pt.y>8)continue;const hit=blockers.some(b=>Math.abs(pt.x-b.x)<b.hw&&Math.abs(pt.z-b.z)<b.hd);if(hit){target.copy(lookAt).addScaledVector(deltaCam,Math.max(0.4,(d-.9)/lengthCam));break;}}
+
+ camera.position.lerp(target,Math.min(1,dt*7));camera.lookAt(lookAt.clone().addScaledVector(shoulder,.32));
  for(let sh of shards){if(collected.has(sh.i))continue;
   sh.g.position.y=1.75+Math.sin(t*2.1+sh.i)*.25;
   sh.crystal.rotation.y+=dt*1.15;sh.crystal.rotation.x=Math.sin(t+sh.i)*.2;
   sh.ring.rotation.z+=dt*.9;sh.light.intensity=1.4+Math.sin(t*3+sh.i)*.5;}
  for(let i=0;i<rings.length;i++){let q=((t*.43+i/4)%1);rings[i].scale.setScalar(.4+3.1*q);rings[i].material.opacity=.45*(1-q);}
  for(let i=0;i<waterRings.length;i++){let q=((t*.3+i/4)%1);waterRings[i].scale.setScalar(.6+3.1*q);waterRings[i].material.opacity=.32*(1-q);}
- for(let n of npcs){n.p.userData.rig.position.y=Math.sin(t*1.7+n.x)*.02;n.sp.material.opacity=clamp(1-Math.hypot(player.position.x-n.x,player.position.z-n.z)/30,0,1);}
- for(let p of palms)p.head.rotation.z=Math.sin(t*.7+p.x)*.032;
+ for(const a of animatedActors){a.mixer.update(dt);const desired=a.role==='hero'?Math.min(1,Math.hypot(velocity.x,velocity.z)/3.1):0;a.weight=ease(a.weight,desired,dt*6);if(a.walk){a.walk.setEffectiveWeight(a.weight);a.walk.timeScale=a.role==='hero'&&input.sprint?1.65:1.05;}if(a.idle)a.idle.setEffectiveWeight(1-a.weight);}
+ for(let n of npcs){const nd=Math.hypot(player.position.x-n.x,player.position.z-n.z);if(nd<5){const a=Math.atan2(player.position.x-n.x,-(player.position.z-n.z));const dd=((a-n.p.rotation.y+3*Math.PI)%(2*Math.PI))-Math.PI;n.p.rotation.y+=dd*Math.min(1,dt*3);}
+ n.p.userData.rig.position.y=Math.sin(t*1.7+n.x)*.02;n.sp.material.opacity=clamp((10-Math.hypot(player.position.x-n.x,player.position.z-n.z))/5,0,1);}
+ for(let p of palms)p.head.rotation.z=Math.sin(t*.7+p.x)*.032;for(let i=0;i<clouds.length;i++)clouds[i].position.x+=Math.sin(t*.08+i)*dt*.022;
  for(let m of motes){m.m.position.y=m.base+Math.sin(t*.8+m.phase)*.28;m.m.material.opacity=night?.5:.19;}
  for(let b of birds){let a=t*b.speed+b.a;b.g.position.set(Math.sin(a)*b.r,b.h+Math.sin(t*.8+b.a)*2,Math.cos(a)*b.r);b.g.rotation.y=a;}
  finishFlare.rotation.y=t*.2;finishFlare.position.y=2.0+Math.sin(t*1.2)*.3;
  if(active&&t-lastNear>.13){nearby=findNearby();const names=nearby?(nearby.type==='npc'?nearby.o.name:nearby.type==='gate'?'بوابة البرج القديمة':'نافورة الحياة'):'';
  $('actionPrompt').classList.toggle('show',!!nearby&&!inDialog);$('promptName').textContent=names;lastNear=t;}
- if(t-lastMap>.12){drawMap();lastMap=t;}
+ if(t-lastMap>.12){drawMap();updateGoal();lastMap=t;}
  if(performance.now()>toastEnd)$('toast').classList.remove('show');
  renderer.render(scene,camera);
 }
 camera.position.set(0,7,25);
 animate();
 window.addEventListener('error',e=>{const el=$('fatal');el.hidden=false;el.textContent='خطأ في اللعبة: '+(e.message||'غير معروف');});
-window.__oasisDebug={getState:()=>({x:player.position.x,z:player.position.z,collected:collected.size,active,inDialog,quality}),setPosition:(x,z)=>player.position.set(x,0,z),acquireIndex:i=>acquire(shards[i]),renderer};
+window.__oasisDebug={getState:()=>({x:player.position.x,z:player.position.z,collected:collected.size,active,inDialog,quality,animated:avatarLoad}),setPosition:(x,z)=>player.position.set(x,0,z),acquireIndex:i=>acquire(shards[i]),renderer};
 
