@@ -1,0 +1,13 @@
+import puppeteer from 'puppeteer-core';
+import assert from 'node:assert/strict';
+const b=await puppeteer.launch({headless:true,executablePath:'/usr/bin/google-chrome',args:['--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader']});
+const p=await b.newPage(); await p.setViewport({width:412,height:915,isMobile:true,deviceScaleFactor:1,hasTouch:true});const errors=[];p.on('pageerror',e=>errors.push(String(e)));
+await p.goto('http://127.0.0.1:5179/oasis-legend-game/',{waitUntil:'domcontentloaded',timeout:27000});
+await p.waitForFunction(()=>window.__oasisDebug?.getState().animated?.premium,{timeout:35000});await p.click('#start');
+await p.evaluate(()=>window.__oasisDebug.setAnalog(1,0));await new Promise(r=>setTimeout(r,2400));
+const pivot=await p.evaluate(()=>window.__oasisDebug.getLocomotion());
+console.log('PIVOT',JSON.stringify(pivot));
+assert.ok(pivot.turnDistance>.15,'large lateral turn must advance planted stepping');
+assert.ok(pivot.character.walkTime>.01,'turn cycle must move animation');
+assert.equal(errors.length,0,'no browser errors');
+await b.close();console.log('PIVOT PASS');

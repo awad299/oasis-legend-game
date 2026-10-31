@@ -602,7 +602,7 @@ function interact(){if(!active||inDialog||$('settings').classList.contains('acti
 
 // Controls: camera-relative velocity; stick up = forward, right = right
 const input={x:0,f:0,keys:new Set(),joyID:null,sprint:false};
-const locomotion={speed:0,targetSpeed:0,distance:0,input:0};
+const locomotion={speed:0,targetSpeed:0,distance:0,turnDistance:0,pivotSpeed:0,input:0};
 let yaw=0,pitch=.19,camDist=isMobile?9.5:10,jumpVelocity=0,vertical=0,velocity=new THREE.Vector3();
 function joystickMove(e){const rect=$('joystick').getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2,rad=rect.width*.34;
  const dx=clamp((e.clientX-cx)/rad,-1,1),dy=clamp((e.clientY-cy)/rad,-1,1),size=Math.hypot(dx,dy),scale=size>1?1/size:1;
@@ -665,6 +665,7 @@ function animate(){
  const dt=Math.min(.05,clock.getDelta());t+=dt;
  if(active&&!inDialog){
   const c=readControls();
+  locomotion.pivotSpeed=0;
   const strength=analogStrength(c.x,c.f);
   const wantSpeed=targetSpeed(c.x,c.f,c.sprint);
   const invLen=strength>0?1/Math.max(.0001,Math.hypot(c.x,c.f)):0;
@@ -676,7 +677,12 @@ function animate(){
   if(wantSpeed>.04){
     const desiredYaw=Math.atan2(dx,-dz);
     const beforeTurn=wrapAngle(desiredYaw-player.rotation.y);
-    player.rotation.y+=beforeTurn*blendFactor(9.2,dt);
+    const turned=beforeTurn*blendFactor(9.2,dt);
+    player.rotation.y+=turned;
+    // A pivot is not a glide: rotate the feet and shift weight as the body turns,
+    // even when translation is deliberately slowed down.
+    locomotion.turnDistance+=Math.abs(turned)*.22;
+    locomotion.pivotSpeed=dt>0?Math.abs(turned)/dt*.22:0;
     const remaining=wrapAngle(desiredYaw-player.rotation.y);
     turnThrottle=.16+.84*Math.max(0,Math.cos(remaining));
   }
@@ -696,7 +702,7 @@ function animate(){
   jumpVelocity-=19*dt;vertical=Math.max(0,vertical+jumpVelocity*dt);if(vertical===0)jumpVelocity=0;player.position.y=vertical;
   // Primitive fallback only; the animated character uses distance-synced skeletal motion.
   if(!avatarLoad.premium){
-   const rig=player.userData,stepPhase=locomotion.distance/WALK_STRIDE*Math.PI*2;
+   const rig=player.userData,stepPhase=(locomotion.distance+locomotion.turnDistance)/WALK_STRIDE*Math.PI*2;
    const amount=Math.min(1,speed/WALK_SPEED);
    rig.legs[0].rotation.x=Math.sin(stepPhase)*.48*amount;
    rig.legs[1].rotation.x=-Math.sin(stepPhase)*.48*amount;
@@ -705,7 +711,7 @@ function animate(){
    rig.rig.position.y=Math.abs(Math.sin(stepPhase))*.03*amount;
   }
   for(let sh of shards){if(!collected.has(sh.i)&&Math.hypot(player.position.x-sh.x,player.position.z-sh.z)<1.8)acquire(sh);}
- } else { velocity.multiplyScalar(Math.exp(-dt*14));locomotion.speed=0;locomotion.targetSpeed=0;locomotion.input=0; }
+ } else { velocity.multiplyScalar(Math.exp(-dt*14));locomotion.speed=0;locomotion.targetSpeed=0;locomotion.pivotSpeed=0;locomotion.input=0; }
  const lookAt=new THREE.Vector3(player.position.x,player.position.y+1.65,player.position.z);
  const dir=new THREE.Vector3(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
  const shoulder=new THREE.Vector3(Math.cos(yaw),0,Math.sin(yaw));
@@ -745,8 +751,8 @@ function animate(){
   if(a.premium&&a.role==='hero'){
     const s=locomotion.speed;
     // 1 gait cycle maps to 1.38 m walking, 2.35 m running. Pause exactly on stop.
-    a.gaitDistance=locomotion.distance;
-    const locomotionWeight=Math.min(1,s/.52);
+    a.gaitDistance=locomotion.distance+locomotion.turnDistance;
+    const locomotionWeight=Math.min(1,Math.max(s/.52,locomotion.pivotSpeed/.5));
     a.weight=ease(a.weight,locomotionWeight,blendFactor(s>.02?9:13,dt));
     a.runBlend=ease(a.runBlend,input.sprint&&s>WALK_SPEED*.85?1:0,blendFactor(7,dt));
     if(a.walk){
@@ -760,7 +766,7 @@ function animate(){
       a.run.setEffectiveWeight(a.weight*a.runBlend);
     }
     a.mixer.update(dt);
-    a.costume.tick(dt,t,a.weight,locomotion.distance/WALK_STRIDE*Math.PI*2);
+    a.costume.tick(dt,t,a.weight,(locomotion.distance+locomotion.turnDistance)/WALK_STRIDE*Math.PI*2);
   }else if(a.premium){
     // Stationary NPCs do not play a slow walk cycle while standing.
     if(a.walk){a.walk.setEffectiveTimeScale(0);a.walk.setEffectiveWeight(0);}

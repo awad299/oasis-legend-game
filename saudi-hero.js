@@ -122,6 +122,20 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   }
  });
  const sandals=[];
+ const footState=[{z:0,lift:0,stance:true},{z:0,lift:0,stance:true}];
+ let currentGait=0, currentWeight=0;
+ function contactFoot(phase,offset,stepSize,stepLift) {
+  const angle=((phase+offset)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+  if(angle<=Math.PI){
+   // During stance, the ground-contact point travels BACKWARD relative to
+   // the advancing root at the same linear speed, creating a planted foot.
+   return {z:-stepSize*.5+stepSize*(angle/Math.PI),lift:0,stance:true};
+  }
+  const q=(angle-Math.PI)/Math.PI;
+  const ease=q*q*(3-2*q);
+  return {z:stepSize*.5-stepSize*ease,lift:stepLift*Math.pow(Math.sin(q*Math.PI),1.2),stance:false};
+ }
+
  for(const side of [-1,1]){
   const shoe=addMesh(robeRoot,new THREE.CapsuleGeometry(.103,.12,4,8),cloth(0x65432f,.7),side*.24,.09,-.13);
   shoe.scale.set(1,.36,1.75);sandals.push(shoe);
@@ -137,7 +151,20 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   const footR=getPosition(bones.RightFoot,v3(.22,.1,0));
   const hip=getPosition(bones.Hips,v3(0,1.28,0));
   const amount=Math.max(0,Math.min(1,activity));
-  const sway=Math.max(-.055,Math.min(.055,hip.x*.13))*.5*amount+.009*Math.sin(gaitPhase)*amount;
+  currentGait=gaitPhase;currentWeight=amount;
+  const runAmount=Math.max(0,Math.min(1,(activity-.87)*4));
+  const footDistance=.68+runAmount*.24;
+  for(let j=0;j<2;j++){
+    const target=contactFoot(gaitPhase,j*Math.PI,footDistance,.16+runAmount*.075);
+    const blend=.2+amount*.8;
+    footState[j]={z:target.z*blend,lift:target.lift*blend,stance:target.stance};
+  }
+  // Hips/cloth shift from one supporting leg to the other, instead of rigidly
+  // sliding the entire silhouette over the ground.
+  const sway=(Math.sin(gaitPhase)*.035+Math.sin(gaitPhase+Math.PI*.5)*.011)*amount;
+  robeRoot.rotation.z=sway*.48;
+  robe.rotation.z=sway;
+  robe.rotation.x=.018*Math.sin(gaitPhase*2)*amount;
   robe.rotation.z=sway;
   const positions=hemPos.array;
   for(let i=0;i<positions.length;i+=3){
@@ -146,17 +173,23 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
    const side=x<0?0:1;
    const foot=side===0?footL:footR;
    const theta=Math.atan2(x,z);
-   const flutter=.012*Math.sin(theta*9+gaitPhase)*heightEffect*amount;
-   const legF=Math.max(-.16,Math.min(.16,foot.z*.10))*heightEffect*amount;
+   const flutter=(.009*Math.sin(theta*9+gaitPhase*1.4)+.014*Math.sin(theta*4-gaitPhase))*heightEffect*amount;
+   const legF=(footState[side].z*.42+Math.max(-.07,Math.min(.07,foot.z*.025)))*heightEffect*amount;
    positions[i]=x+Math.min(.04,Math.max(-.04,foot.x*.05))*heightEffect*amount;
-   positions[i+1]=y+Math.sin(theta*7+gaitPhase)*.013*heightEffect*amount;
+   positions[i+1]=y+(Math.sin(theta*7+gaitPhase)*.012+footState[side].lift*.22)*heightEffect*amount;
    positions[i+2]=z+(legF+flutter)*heightEffect;
   }
   hemPos.needsUpdate=true;robe.geometry.computeVertexNormals();
   hemTrim.position.z=(footL.z+footR.z)*.035;
   for(let i=0;i<2;i++){
    const f=i===0?footL:footR;
-   sandals[i].position.set(Math.max(-.5,Math.min(.5,f.x)),Math.max(.075,Math.min(.24,f.y)),Math.max(-.3,Math.min(.3,f.z)));
+   const contact=footState[i];
+   sandals[i].position.set(
+    (i===0?-.225:.225)+Math.min(.025,Math.max(-.025,f.x*.025))*amount,
+    .08+contact.lift,
+    -.115+contact.z
+   );
+   sandals[i].rotation.x=contact.stance?0:-Math.sin((gaitPhase+i*Math.PI)%(Math.PI*2))*.18*amount;
   }
   if(bones.LeftArm&&bones.LeftHand&&bones.RightArm&&bones.RightHand){
    for(const [k,side] of ['Left','Right'].entries()){
@@ -179,6 +212,6 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   for(const o of drapes)o.position.copy(off);
  }
  const shadow=makeGroundShadow(scene,target);
- return {...costume,removedParts,variant,tick:(dt,t,activity=0,phase=0)=>{tick(dt,t,activity,phase);shadow(dt);}};
+ return {...costume,removedParts,variant,getGait:()=>({phase:currentGait,weight:currentWeight,feet:footState.map(f=>({...f}))}),tick:(dt,t,activity=0,phase=0)=>{tick(dt,t,activity,phase);shadow(dt);}};
 }
 

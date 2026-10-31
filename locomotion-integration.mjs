@@ -15,7 +15,7 @@ async function sample(stage,x,f,sprint,ms) {
  await new Promise(r=>setTimeout(r,ms));
  const after=await page.evaluate(()=>({state:window.__oasisDebug.getState(),m:window.__oasisDebug.getLocomotion()}));
  const meters=Math.hypot(after.state.x-before.state.x,after.state.z-before.state.z);
- const result={stage,meters:Number(meters.toFixed(3)),speed:Number(after.m.speed.toFixed(2)),target:Number(after.m.targetSpeed.toFixed(2)),gait:Number(after.m.distance.toFixed(3)),weight:after.m.character?.walkWeight,runWeight:after.m.character?.runWeight,walkTime:after.m.character?.walkTime,runTime:after.m.character?.runTime};
+ const result={stage,meters:Number(meters.toFixed(3)),speed:Number(after.m.speed.toFixed(2)),target:Number(after.m.targetSpeed.toFixed(2)),gait:Number(after.m.distance.toFixed(3)),turn:Number(after.m.turnDistance.toFixed(3)),weight:after.m.character?.walkWeight,runWeight:after.m.character?.runWeight,walkTime:after.m.character?.walkTime,runTime:after.m.character?.runTime};
  console.log(JSON.stringify(result));
  return result;
 }
@@ -29,7 +29,7 @@ assert.ok(run.target>full.target*1.7,'run must request significantly faster move
 assert.equal(stop.target,0,'releasing stick must set target speed to zero');
 assert.ok(stop.runWeight<run.runWeight,'running animation should fade on release');
 for(const stage of [mild,full,run,stop]){
-  const predictedWalk=((stage.gait/1.55)%1+1)%1;
+  const predictedWalk=(((stage.gait+stage.turn)/1.55)%1+1)%1;
   assert.ok(Math.abs(stage.walkTime-predictedWalk)<.002,'Walk clip phase must track distance, not elapsed time: '+stage.stage);
 }
 assert.ok(errors.length===0,'page should be error free');
