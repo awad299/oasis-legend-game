@@ -70,11 +70,57 @@ function makeGroundShadow(scene,player){
 }
 export function attachSaudiHero({target,model,scene,clipName='walk',quality='medium',variant='man',color=0xece4d5}){
  const robeRoot=new THREE.Group();robeRoot.name='Saudi_thobe';target.add(robeRoot);
- const costume={root:robeRoot,mode:'full',model,source:'CC0 high-detail humanoid with procedural Saudi thobe and shemagh'};
+ const costume={root:robeRoot,mode:'skinned',model,source:'CC0 humanoid with a skeleton-bound Saudi thobe'};
  const outfitMat=variant==='woman'?cloth(0x1f2526):cloth(color);
- const robe=addMesh(robeRoot,robeGeometry(),outfitMat);
- const baseHem=robe.geometry.attributes.position.array.slice();
- const hemPos=robe.geometry.attributes.position;
+ const sourceSkin=model.getObjectByProperty('type','SkinnedMesh');
+ if(!sourceSkin||!sourceSkin.skeleton)throw new Error('Rigged clothing requires an actual humanoid skeleton');
+ const boneIndex=name=>sourceSkin.skeleton.bones.findIndex(b=>b.name===name);
+ const joints={hip:boneIndex('Hips'),spine:boneIndex('Spine'),leftThigh:boneIndex('LeftUpLeg'),rightThigh:boneIndex('RightUpLeg'),leftShin:boneIndex('LeftLeg'),rightShin:boneIndex('RightLeg')};
+ if(Object.values(joints).some(i=>i<0))throw new Error('Skeleton is missing hip or leg bones');
+ // The garment uses the character's very same GPU skeleton, not a fake cylinder
+ // deformed with a sine wave. Vertices are weighted to hip, spine, thighs and knees.
+ target.updateWorldMatrix(true,true);
+ sourceSkin.parent.updateWorldMatrix(true,true);
+ const garmentGeometry=robeGeometry();
+ const garmentPositions=garmentGeometry.getAttribute('position');
+ const garmentSkinIndices=[],garmentSkinWeights=[];
+ const worldPoint=new THREE.Vector3();
+ for(let i=0;i<garmentPositions.count;i++){
+   const x=garmentPositions.getX(i),y=garmentPositions.getY(i),z=garmentPositions.getZ(i);
+   worldPoint.set(x,y,z);target.localToWorld(worldPoint);
+   sourceSkin.parent.worldToLocal(worldPoint);
+   // GLB mesh coordinates are meters, but armature skin bind is in centimeters.
+   // The inverse bind transform expands to centimeters during GPU skinning.
+   worldPoint.multiplyScalar(.01);
+   garmentPositions.setXYZ(i,worldPoint.x,worldPoint.y,worldPoint.z);
+   const side=Math.min(1,Math.max(0,(x+.10)/.20));
+   const upper=Math.max(0,Math.min(1,(y-.95)/.52));
+   const lower=Math.max(0,Math.min(1,(.88-y)/.64));
+   const thigh=.12+(.27*(1-upper));
+   const shin=lower*.19;
+   const torso=Math.max(0,(y-1.3)/.9)*.45;
+   const hip=1-thigh-shin-torso;
+   // Smoothly blend cross seam near center of the garment.
+   garmentSkinIndices.push(joints.hip,joints.spine,joints.leftThigh,joints.rightThigh);
+   garmentSkinWeights.push(hip+shin,torso,thigh*(1-side),thigh*side);
+   // Knee influence is assigned to the lower half by converting some hip weight.
+   if(shin>.001){
+     const off=i*4,other=side>.5?joints.rightShin:joints.leftShin;
+     garmentSkinIndices[off+1]=other;
+     garmentSkinWeights[off+1]=shin+torso;
+     garmentSkinWeights[off]=hip;
+   }
+ }
+ garmentGeometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(garmentSkinIndices,4));
+ garmentGeometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(garmentSkinWeights,4));
+ garmentPositions.needsUpdate=true;garmentGeometry.computeVertexNormals();
+ const robe=new THREE.SkinnedMesh(garmentGeometry,outfitMat);
+ robe.name='SkinnedSaudiThobe';
+ robe.castShadow=true;robe.receiveShadow=true;robe.frustumCulled=false;
+ sourceSkin.parent.add(robe);
+ robe.bind(sourceSkin.skeleton,sourceSkin.bindMatrix);
+ // Keep original shape data only for diagnostics, NOT for CPU vertex animation.
+ const baseHem=null,hemPos=null;
  // Cloth is driven each frame by the animated hip/ankle skeleton, not a static rigid cylinder.
  const hemTrim=addMesh(robeRoot,new THREE.TorusGeometry(.49,.012,5,56),variant==='woman'?cloth(0x404b4c):cuffMat,0,.20,0);hemTrim.rotation.x=Math.PI/2;
  // Under-layer fills the garment opening so hidden thighs never flash through at a long stride.
@@ -102,7 +148,7 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
  // This prevents the leg from protruding through the moving robe.
  const removedParts=[];
  model.traverse(o=>{
-  if(!o.isSkinnedMesh||!o.geometry?.getAttribute('position'))return;
+  if(o===robe||o.name==='SkinnedSaudiThobe'||!o.isSkinnedMesh||!o.geometry?.getAttribute('position'))return;
   const geometry=o.geometry.clone(),position=geometry.getAttribute('position');
   const idx=geometry.index,indices=idx?Array.from(idx.array):Array.from({length:position.count},(_,i)=>i);
   const kept=[];
@@ -186,28 +232,16 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   // Short double-support bounce: torso moves while each sole remains grounded.
   const bob=(.018+.029*(.5+.5*Math.cos(2*gaitPhase)))*amount;
   const lateral=.018*Math.sin(gaitPhase)*amount;
-  robeRoot.position.y=bob;
-  robeRoot.position.x=lateral;
-  model.position.y=baseModelPosition.y+bob;
-  model.position.x=baseModelPosition.x+lateral;
+  robeRoot.position.y=0;
+  robeRoot.position.x=lateral*.18;
+  // Let the rig and IK manage ground contact. Never shift the skinned skeleton
+  // after the feet have been solved, or the planted feet would slide upward.
+  // Model's vertical pose is owned by the locomotion controller before Foot IK.\n  model.position.x=baseModelPosition.x;
   model.rotation.z=baseModelRotationZ+sway*.20;
-  robeRoot.rotation.z=sway*.42;
-  robe.rotation.z=sway*.5;
-  robe.rotation.x=.014*Math.sin(gaitPhase*2)*amount;
-  const positions=hemPos.array;
-  for(let i=0;i<positions.length;i+=3){
-   const x=baseHem[i],y=baseHem[i+1],z=baseHem[i+2];
-   const heightEffect=Math.pow(Math.max(0,(1.25-y)/1.12),1.4);
-   const side=x<0?0:1;
-   const foot=side===0?footL:footR;
-   const theta=Math.atan2(x,z);
-   const flutter=(.009*Math.sin(theta*9+gaitPhase*1.4)+.014*Math.sin(theta*4-gaitPhase))*heightEffect*amount;
-   const legF=(footState[side].z*.43+Math.max(-.07,Math.min(.07,foot.z*.025)))*heightEffect*amount;
-   positions[i]=x+Math.min(.04,Math.max(-.04,foot.x*.05))*heightEffect*amount;
-   positions[i+1]=y+(Math.sin(theta*7+gaitPhase)*.012+footState[side].lift*.22)*heightEffect*amount;
-   positions[i+2]=z+(legF+flutter)*heightEffect;
-  }
-  hemPos.needsUpdate=true;robe.geometry.computeVertexNormals();
+  robeRoot.rotation.z=sway*.26;
+  // The GPU-skinned thobe follows the animated skeleton automatically.
+  // Do not rotate this mesh separately: doing so breaks the skin bind pose.
+  // No CPU sine-wave vertices: skeleton skin weights deform thigh and hem.
   hemTrim.position.z=(footL.z+footR.z)*.035;
   const shadowPoint=new THREE.Vector3();
   for(let i=0;i<2;i++){
@@ -215,12 +249,10 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
    const contact=footState[i];
    // The shoe sole can now peek from the front/back of the thobe at each stride.
    // Shoes are counter-offset against torso bob so they do not hover with the chest.
-   sandals[i].position.set(
-    (i===0?-.265:.265)+Math.min(.02,Math.max(-.02,f.x*.025))*amount-lateral,
-    .073+contact.lift-bob,
-    -.10+contact.z*1.32
-   );
-   sandals[i].rotation.x=contact.stance?0:-Math.sin((gaitPhase+i*Math.PI)%(Math.PI*2))*.17*amount;
+   // Follow the foot BONE after IK, never a separate fake shoe trajectory.
+   const ankle=i===0?footL:footR;
+   sandals[i].position.set(ankle.x,ankle.y-.11,ankle.z-.10);
+   sandals[i].rotation.x=0;
    sandals[i].updateWorldMatrix(true,false);
    sandals[i].getWorldPosition(shadowPoint);
    footShadows[i].position.set(shadowPoint.x,.043,shadowPoint.z);
@@ -248,6 +280,6 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   for(const o of drapes)o.position.copy(off);
  }
  const shadow=makeGroundShadow(scene,target);
- return {...costume,removedParts,variant,getGait:()=>({phase:currentGait,weight:currentWeight,feet:footState.map((f,i)=>({...f,shoe:sandals[i].position.toArray()}))}),tick:(dt,t,activity=0,phase=0,runMix=0)=>{tick(dt,t,activity,phase,runMix);shadow(dt);}};
+ return {...costume,robe,removedParts,variant,getGait:()=>({phase:currentGait,weight:currentWeight,feet:footState.map((f,i)=>({...f,shoe:sandals[i].position.toArray()}))}),tick:(dt,t,activity=0,phase=0,runMix=0)=>{tick(dt,t,activity,phase,runMix);shadow(dt);}};
 }
 

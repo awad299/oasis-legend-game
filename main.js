@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
 import {attachSaudiHero} from './saudi-hero.js';
+import {createFootIK} from './foot-ik.js';
 import {targetSpeed, analogStrength, blendFactor, wrapAngle, cycleTime, WALK_SPEED, RUN_SPEED, WALK_STRIDE, RUN_STRIDE} from './locomotion.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -486,7 +487,8 @@ async function upgradeHero(){
   if(walk){walk.play();walk.setEffectiveWeight(0);walk.setEffectiveTimeScale(0);}
   if(run){run.play();run.setEffectiveWeight(0);run.setEffectiveTimeScale(0);}
   const costume=attachSaudiHero({target:player,model,scene,variant:'man'});
-  animatedActors.push({target:player,model,mixer,idle:null,walk,run,weight:0,runBlend:0,gaitDistance:0,actualSpeed:0,role:'hero',costume,premium:true});
+  const ik=createFootIK(model);
+  animatedActors.push({target:player,model,mixer,idle:null,walk,run,ik,baseModelY:model.position.y,weight:0,runBlend:0,gaitDistance:0,actualSpeed:0,role:'hero',costume,premium:true});
   avatarLoad.premium=true;avatarLoad.actors++;
   // Shared skinned source and authored costume: one coherent Saudi cast, not medieval NPCs.
   const variants=[
@@ -763,7 +765,10 @@ function animate(){
       a.run.time=cycleTime(a.gaitDistance,RUN_STRIDE,a.run.getClip().duration);
       a.run.setEffectiveWeight(a.weight*a.runBlend);
     }
+    // Mild pelvis compression keeps the knee/ankle chain within physical reach at stance.
+    a.model.position.y=a.baseModelY-.16*a.weight;
     a.mixer.update(dt);
+    a.ik.update({phase:(locomotion.distance+locomotion.turnDistance)/WALK_STRIDE*Math.PI*2,weight:vertical>.09?0:a.weight*(1-a.runBlend*.35),dt,groundY:a.target.position.y});
     a.costume.tick(dt,t,a.weight,(locomotion.distance+locomotion.turnDistance)/WALK_STRIDE*Math.PI*2,a.runBlend);
   }else if(a.premium){
     // Stationary NPCs do not play a slow walk cycle while standing.
@@ -790,5 +795,5 @@ function animate(){
 camera.position.set(0,7,25);
 animate();
 window.addEventListener('error',e=>{const el=$('fatal');el.hidden=false;el.textContent='خطأ في اللعبة: '+(e.message||'غير معروف');});
-window.__oasisDebug={getState:()=>({x:player.position.x,z:player.position.z,collected:collected.size,active,inDialog,quality,animated:avatarLoad}),setPosition:(x,z)=>player.position.set(x,0,z),acquireIndex:i=>acquire(shards[i]),getLocomotion:()=>({...locomotion,character: animatedActors.find(a=>a.role==='hero'&&a.premium)? {walkWeight:animatedActors.find(a=>a.role==='hero'&&a.premium)?.walk?.getEffectiveWeight(),runWeight:animatedActors.find(a=>a.role==='hero'&&a.premium)?.run?.getEffectiveWeight(),walkTime:animatedActors.find(a=>a.role==='hero'&&a.premium)?.walk?.time,runTime:animatedActors.find(a=>a.role==='hero'&&a.premium)?.run?.time,gait:animatedActors.find(a=>a.role==='hero'&&a.premium)?.costume?.getGait?.()}:null}),setAnalog:(x,f)=>{input.x=x;input.f=f},setSprint:(yes)=>{input.sprint=yes},setView:(a,b)=>{yaw=a;pitch=b},getCamera:()=>({distance:camera.position.distanceTo(player.position),camera:camera.position.toArray(),player:player.position.toArray()}),getCharacters:()=>animatedActors.map(a=>({role:a.role,premium:!!a.premium,variant:a.costume?.variant,removed:a.costume?.removedParts||[]})),renderer};
+window.__oasisDebug={getState:()=>({x:player.position.x,z:player.position.z,collected:collected.size,active,inDialog,quality,animated:avatarLoad}),setPosition:(x,z)=>player.position.set(x,0,z),acquireIndex:i=>acquire(shards[i]),getLocomotion:()=>({...locomotion,character: animatedActors.find(a=>a.role==='hero'&&a.premium)? {walkWeight:animatedActors.find(a=>a.role==='hero'&&a.premium)?.walk?.getEffectiveWeight(),runWeight:animatedActors.find(a=>a.role==='hero'&&a.premium)?.run?.getEffectiveWeight(),walkTime:animatedActors.find(a=>a.role==='hero'&&a.premium)?.walk?.time,runTime:animatedActors.find(a=>a.role==='hero'&&a.premium)?.run?.time,gait:animatedActors.find(a=>a.role==='hero'&&a.premium)?.costume?.getGait?.()}:null}),setAnalog:(x,f)=>{input.x=x;input.f=f},setSprint:(yes)=>{input.sprint=yes},setView:(a,b)=>{yaw=a;pitch=b},getCamera:()=>({distance:camera.position.distanceTo(player.position),camera:camera.position.toArray(),player:player.position.toArray()}),getActor:()=>animatedActors.find(a=>a.premium&&a.role==='hero'),getFootIK:()=>animatedActors.find(a=>a.premium&&a.role==='hero')?.ik?.getState(),getCharacters:()=>animatedActors.map(a=>({role:a.role,premium:!!a.premium,variant:a.costume?.variant,removed:a.costume?.removedParts||[]})),renderer};
 
