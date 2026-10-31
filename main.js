@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
+import {attachSaudiHero} from './saudi-hero.js';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 
 // LEGEND OF THE OASIS — original browser adventure, built for touch and desktop.
 const $ = id => document.getElementById(id);
@@ -75,6 +77,27 @@ const clouds=[];for(let i=0;i<11;i++){const sprite=new THREE.Sprite(new THREE.Sp
 // Ground, layered paths, tiling and distant mountains
 plane(230,230,sandTex,0,-.12,0);
 const road=mat(0xd5b78d);
+// Physically based sandstone plaster and courtyard paving (ambientCG, CC0).
+const textureLoader=new THREE.TextureLoader();
+function pbrTexture(name,kind,rx=3,ry=3){
+ const t=textureLoader.load(import.meta.env.BASE_URL+'textures/'+name+'_'+kind+'.webp');
+ t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rx,ry);t.anisotropy=4;
+ if(kind==='albedo')t.colorSpace=THREE.SRGBColorSpace;
+ return t;
+}
+function installPBR(mat,name,rx,ry,tint){
+ mat.map=pbrTexture(name,'albedo',rx,ry);
+ mat.normalMap=pbrTexture(name,'normal',rx,ry);
+ mat.normalScale.set(.24,.24);
+ mat.roughnessMap=pbrTexture(name,'rough',rx,ry);
+ mat.roughness=.94;mat.color.setHex(tint);mat.needsUpdate=true;
+}
+installPBR(wallMat,'Plaster001',3,2,0xdfb98d);
+installPBR(wallLight,'Plaster001',3,2,0xe6cba2);
+pavement.map=pbrTexture('OasisCourtyard','albedo',5,23);
+pavement.normalMap=pbrTexture('OasisCourtyard','normal',5,23);
+pavement.normalScale.set(.18,.18);pavement.roughness=.98;pavement.color.setHex(0xfff5e5);pavement.needsUpdate=true;
+
 plane(9,95,pavement,0,-.074,-4);plane(77,9,pavement,0,-.073,-9);
 plane(57,6,pavement,0,-.069,17);plane(7,38,pavement,20,-.068,9);
 plane(7,34,pavement,-20,-.068,8);
@@ -266,6 +289,41 @@ async function loadNature(){
   }
  }catch(err){console.warn('Optional nature props unavailable',err);}
 }
+// Detailed CC0 date palms: 65-authored mesh parts combined into one draw call.
+async function installPremiumPalmGroves(){
+ try{
+  const source=await loadCharacterModel('highres/palm_detailed');
+  source.scene.updateWorldMatrix(true,true);
+  const geoParts=[];
+  source.scene.traverse(o=>{
+   if(!o.isMesh)return;
+   const m=o.geometry.clone();m.applyMatrix4(o.matrixWorld);
+   const raw=m.index?m.toNonIndexed():m,geom=new THREE.BufferGeometry();
+   geom.setAttribute('position',raw.getAttribute('position').clone());
+   if(raw.getAttribute('normal'))geom.setAttribute('normal',raw.getAttribute('normal').clone());
+   else{geom.setAttribute('normal',new THREE.Float32BufferAttribute(new Float32Array(raw.getAttribute('position').count*3),3));geom.computeVertexNormals();}
+   const count=raw.getAttribute('position').count,v=new Float32Array(count*3);
+   const color=o.material?.color||new THREE.Color(0x64824a);
+   for(let i=0;i<count;i++){v[i*3]=color.r;v[i*3+1]=color.g;v[i*3+2]=color.b;}
+   geom.setAttribute('color',new THREE.BufferAttribute(v,3));geoParts.push(geom);
+  });
+  const geo=mergeGeometries(geoParts,false);
+  if(!geo)throw new Error('Palm mesh merge failed');
+  geo.computeBoundingBox();
+  const origin=geo.boundingBox.min.clone(),height=geo.boundingBox.max.y-origin.y;
+  const foliage=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,side:THREE.DoubleSide});
+  for(const p of palms)if(Math.hypot(p.x,p.z+4)<40)p.g.visible=false;
+  const allPlaces=[[-11,14,1.07],[-19,21,.92],[19,14,1.1],[25,23,.94],[-11,-23,1.13],[13,-25,1.05],[-24,5,.95],[28,-4,.99]];
+  const places=isMobile?allPlaces.slice(0,3):allPlaces.slice(0,5);
+  for(const [x,z,s] of places){
+   const tree=new THREE.Mesh(geo,foliage);const scale=(8.5/height)*s;
+   tree.position.set(x,-origin.y*scale,z);tree.scale.setScalar(scale);
+   tree.rotation.y=R(-Math.PI,Math.PI);tree.castShadow=quality==='high';tree.receiveShadow=true;
+   scene.add(tree);
+  }
+  avatarLoad.premiumPalms=places.length;
+ }catch(err){avatarLoad.premiumPalmError=String(err);console.warn('Premium palm fallback',err);}
+}
 // A watchtower beside the old gate
 const tower=new THREE.Group();tower.position.set(14,0,-48);scene.add(tower);
 C(3.6,4.2,14,wallMat,0,7,0,tower,16);
@@ -361,7 +419,7 @@ async function loadAnimatedCast(){
    const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());
    const scale=(role==='hero'?2.85:2.65)/(size.y||1);
    model.scale.setScalar(scale);model.position.y=-bounds.min.y*scale-.32;model.rotation.y=Math.PI;
-   model.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true;}if((o.isMesh||o.isGroup)&&/Spellbook|Longbow|Sword|Shield|2H_Staff|Bow|Quiver/i.test(o.name))o.visible=false;});
+   model.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;}if((o.isMesh||o.isGroup)&&/Spellbook|Longbow|Sword|Shield|2H_Staff|Bow|Quiver/i.test(o.name))o.visible=false;});
    target.userData.rig.visible=false;target.add(model);
    const mixer=new THREE.AnimationMixer(model),idleClip=src.animations.find(c=>c.name==='Idle'),walkClip=src.animations.find(c=>c.name==='Walking_A');
    const idle=idleClip?mixer.clipAction(idleClip):null,walk=walkClip?mixer.clipAction(walkClip):null;
@@ -377,7 +435,30 @@ async function loadAnimatedCast(){
   avatarLoad.ready=true;
  }catch(err){avatarLoad.error=String(err);console.error('Animated character load failed, using fallback',err);}
 }
-loadAnimatedCast();loadNature();
+async function upgradeHero(){
+ try{
+  const src=await loadCharacterModel('highres/man_rigged');
+  const model=cloneSkinned(src.scene);
+  const box=new THREE.Box3().setFromObject(model),height=box.getSize(new THREE.Vector3()).y;
+  if(!height)throw new Error('high-detail mesh missing bounds');
+  const k=1.47;model.scale.setScalar(k);model.position.y=-.01;model.rotation.y=Math.PI;
+  model.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;}});
+  const old=animatedActors.find(a=>a.role==='hero');
+  if(old){old.model.visible=false;old.mixer.stopAllAction();animatedActors.splice(animatedActors.indexOf(old),1);avatarLoad.actors--;}
+  player.add(model);
+  const mixer=new THREE.AnimationMixer(model);
+  const walkClip=src.animations.find(a=>a.name.toLowerCase()==='walk');
+  const runClip=src.animations.find(a=>a.name.toLowerCase()==='run');
+  const walk=walkClip?mixer.clipAction(walkClip):null,run=runClip?mixer.clipAction(runClip):null;
+  if(walk){walk.play();walk.setEffectiveWeight(.08);}
+  if(run){run.play();run.setEffectiveWeight(0);}
+  const costume=attachSaudiHero({target:player,model,scene});
+  animatedActors.push({target:player,model,mixer,idle:null,walk,run,weight:0,role:'hero',costume,premium:true});
+  avatarLoad.premium=true;avatarLoad.actors++;
+ }catch(error){avatarLoad.premium=false;avatarLoad.premiumError=String(error);console.warn('Premium character unavailable, retained original avatar',error);}
+}
+loadAnimatedCast().then(()=>upgradeHero());
+loadNature();installPremiumPalmGroves();
 // Quest shards — pickup is automatic near a 3D object
 const shardPositions=[[-3,5], [-17,-13],[-21,19],[26,24],[-3,-32]];
 const shards=[];
@@ -556,7 +637,7 @@ function animate(){
   sh.ring.rotation.z+=dt*.9;sh.light.intensity=1.4+Math.sin(t*3+sh.i)*.5;}
  for(let i=0;i<rings.length;i++){let q=((t*.43+i/4)%1);rings[i].scale.setScalar(.4+3.1*q);rings[i].material.opacity=.45*(1-q);}
  for(let i=0;i<waterRings.length;i++){let q=((t*.3+i/4)%1);waterRings[i].scale.setScalar(.6+3.1*q);waterRings[i].material.opacity=.32*(1-q);}
- for(const a of animatedActors){a.mixer.update(dt);const desired=a.role==='hero'?Math.min(1,Math.hypot(velocity.x,velocity.z)/3.1):0;a.weight=ease(a.weight,desired,dt*6);if(a.walk){a.walk.setEffectiveWeight(a.weight);a.walk.timeScale=a.role==='hero'&&input.sprint?1.65:1.05;}if(a.idle)a.idle.setEffectiveWeight(1-a.weight);}
+ for(const a of animatedActors){a.mixer.update(dt);const desired=a.role==='hero'?Math.min(1,Math.hypot(velocity.x,velocity.z)/3.1):0;a.weight=ease(a.weight,desired,dt*6);if(a.premium){if(a.walk){a.walk.setEffectiveWeight(input.sprint?.04:Math.max(.1,a.weight));a.walk.timeScale=a.weight<.05?.06:1.08;}if(a.run)a.run.setEffectiveWeight(input.sprint?a.weight:0);a.costume.tick(dt,t);}else{if(a.walk){a.walk.setEffectiveWeight(a.weight);a.walk.timeScale=a.role==='hero'&&input.sprint?1.65:1.05;}if(a.idle)a.idle.setEffectiveWeight(1-a.weight);}}
  for(let n of npcs){const nd=Math.hypot(player.position.x-n.x,player.position.z-n.z);if(nd<5){const a=Math.atan2(player.position.x-n.x,-(player.position.z-n.z));const dd=((a-n.p.rotation.y+3*Math.PI)%(2*Math.PI))-Math.PI;n.p.rotation.y+=dd*Math.min(1,dt*3);}
  n.p.userData.rig.position.y=Math.sin(t*1.7+n.x)*.02;n.sp.material.opacity=clamp((10-Math.hypot(player.position.x-n.x,player.position.z-n.z))/5,0,1);}
  for(let p of palms)p.head.rotation.z=Math.sin(t*.7+p.x)*.032;for(let i=0;i<clouds.length;i++)clouds[i].position.x+=Math.sin(t*.08+i)*dt*.022;

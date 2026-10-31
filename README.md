@@ -21,3 +21,11 @@
 - كاميرا كتف مع تخفيف دخول الكاميرا في البيوت، خريطة اختيارية على الجوال، بيئة صحراوية أكثر تدرجًا.
 - اختبار E2E يجمع الشظايا الخمس ويُكمل المهمة ويؤكد حفظها محليًا.
 - بيانات حقوق الأصول: ART_LICENSES.md.
+
+
+## 3.0 — Vertical slice art upgrade
+- Real-proportioned, skinned human hero dressed in original procedurally tailored Saudi thobe, shemagh and agal; animation clips for walking and running and contact shadow.
+- Detailed date palms optimized by geometry merging (three on mobile, five on desktop).
+- PBR plaster and sand-toned masonry materials with tileable normal maps.
+- Tuned third-person shoulder camera, visual waypoints, preserving existing quests and NPC interactions.
+- The goal is a playable art vertical slice, not an AAA-fidelity release. Third-party asset origins and CC0 licenses: ART_LICENSES.md.

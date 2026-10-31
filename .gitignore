@@ -3,3 +3,6 @@ dist/
 *.log
 *-playing.png
 *-before.png
+check-*.png
+visual-inspect.mjs
+debug-hero.mjs
