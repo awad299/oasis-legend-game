@@ -13,9 +13,9 @@ for(const [x,z] of [[-3,5],[-17,-13],[-21,19],[26,24],[-3,-32]]){
 }
 const all=await page.evaluate(()=>window.__oasisDebug.getState());
 await page.evaluate(()=>window.__oasisDebug.setPosition(0,-40));
-await new Promise(r=>setTimeout(r,450));
+await page.waitForFunction(()=>document.querySelector('#actionPrompt.show')?.textContent?.includes('بوابة'),{timeout:40000});
 await page.click('#interact');
-await new Promise(r=>setTimeout(r,550));
+await page.waitForFunction(()=>document.querySelector('#dialogue.active'),{timeout:40000});
 const last=await page.evaluate(()=>({state:window.__oasisDebug.getState(),dialog:document.querySelector('#dialogue').className,quest:document.querySelector('#questText').textContent,saved:localStorage.getItem('oasis_progress')}));
 console.log(JSON.stringify({first,all,last,errors,net404},null,2));
 if(all.collected!==5||!last.state.inDialog||last.quest!=='اكتملت أسطورة الواحة'||errors.length)process.exitCode=1;
