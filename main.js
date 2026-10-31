@@ -351,12 +351,9 @@ function courtyardVignette(){
   C(.19,.19,.52,glass,x,1.62,z,g,6).castShadow=false;
   C(.27,.27,.10,bronze,x,1.32,z,g,8);
  }
- for(let j=0;j<6;j++){
-  const x=-10.3+j*4.15,z=8.8+Math.sin(j*.5)*.10;
-  const matBanner=mat(j%3===0?0x8b5640:j%3===1?0x446d62:0xc1a06d);
-  const banner=mesh(new THREE.PlaneGeometry(.6,1),new THREE.MeshStandardMaterial({color:matBanner.color,side:THREE.DoubleSide,roughness:1}),x,4.65,z,g,false);
-  banner.rotation.y=Math.sin(j*.5)*.1;
- }
+ // Remove the unsupported midair fabric rectangles seen above the player.
+ // Market banners are instead attached to their own wooden frames.
+
 }
 courtyardVignette();
 // A watchtower beside the old gate
@@ -385,6 +382,7 @@ const birds=[];for(let j=0;j<8;j++){const g=new THREE.Group();scene.add(g);
 function banner(x,z,ang=0){
  const g=new THREE.Group();g.position.set(x,0,z);g.rotation.y=ang;scene.add(g);
  B(4.6,.07,.08,wood,0,4.4,0,g);
+ for(let side of [-1,1])C(.085,.10,4.4,wood,side*2.23,2.2,0,g,8);
  for(let i=0;i<8;i++){const j=-1.95+i*.55;const fabric=mesh(new THREE.PlaneGeometry(.51,R(.65,1.25)),new THREE.MeshStandardMaterial({color:i%3===0?0xb45d4a:i%3===1?0xe5c17d:0x386b65,side:THREE.DoubleSide,roughness:1}),j,3.96,0,g,false);fabric.rotation.y=R(-.2,.2);}
 }
 banner(-18,-4,.24);banner(18,-4,-.15);banner(-10,-27,.12);
@@ -603,7 +601,7 @@ function interact(){if(!active||inDialog||$('settings').classList.contains('acti
 // Controls: camera-relative velocity; stick up = forward, right = right
 const input={x:0,f:0,keys:new Set(),joyID:null,sprint:false};
 const locomotion={speed:0,targetSpeed:0,distance:0,turnDistance:0,pivotSpeed:0,input:0};
-let yaw=0,pitch=.19,camDist=isMobile?9.5:10,jumpVelocity=0,vertical=0,velocity=new THREE.Vector3();
+let yaw=0,pitch=.19,camDist=isMobile?8.15:10,jumpVelocity=0,vertical=0,velocity=new THREE.Vector3();
 function joystickMove(e){const rect=$('joystick').getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2,rad=rect.width*.34;
  const dx=clamp((e.clientX-cx)/rad,-1,1),dy=clamp((e.clientY-cy)/rad,-1,1),size=Math.hypot(dx,dy),scale=size>1?1/size:1;
  input.x=dx*scale;input.f=-dy*scale;
@@ -766,7 +764,7 @@ function animate(){
       a.run.setEffectiveWeight(a.weight*a.runBlend);
     }
     a.mixer.update(dt);
-    a.costume.tick(dt,t,a.weight,(locomotion.distance+locomotion.turnDistance)/WALK_STRIDE*Math.PI*2);
+    a.costume.tick(dt,t,a.weight,(locomotion.distance+locomotion.turnDistance)/WALK_STRIDE*Math.PI*2,a.runBlend);
   }else if(a.premium){
     // Stationary NPCs do not play a slow walk cycle while standing.
     if(a.walk){a.walk.setEffectiveTimeScale(0);a.walk.setEffectiveWeight(0);}
@@ -792,5 +790,5 @@ function animate(){
 camera.position.set(0,7,25);
 animate();
 window.addEventListener('error',e=>{const el=$('fatal');el.hidden=false;el.textContent='خطأ في اللعبة: '+(e.message||'غير معروف');});
-window.__oasisDebug={getState:()=>({x:player.position.x,z:player.position.z,collected:collected.size,active,inDialog,quality,animated:avatarLoad}),setPosition:(x,z)=>player.position.set(x,0,z),acquireIndex:i=>acquire(shards[i]),getLocomotion:()=>({...locomotion,character: animatedActors.find(a=>a.role==='hero'&&a.premium)? {walkWeight:animatedActors.find(a=>a.role==='hero'&&a.premium)?.walk?.getEffectiveWeight(),runWeight:animatedActors.find(a=>a.role==='hero'&&a.premium)?.run?.getEffectiveWeight(),walkTime:animatedActors.find(a=>a.role==='hero'&&a.premium)?.walk?.time,runTime:animatedActors.find(a=>a.role==='hero'&&a.premium)?.run?.time}:null}),setAnalog:(x,f)=>{input.x=x;input.f=f},setSprint:(yes)=>{input.sprint=yes},setView:(a,b)=>{yaw=a;pitch=b},getCamera:()=>({distance:camera.position.distanceTo(player.position),camera:camera.position.toArray(),player:player.position.toArray()}),getCharacters:()=>animatedActors.map(a=>({role:a.role,premium:!!a.premium,variant:a.costume?.variant,removed:a.costume?.removedParts||[]})),renderer};
+window.__oasisDebug={getState:()=>({x:player.position.x,z:player.position.z,collected:collected.size,active,inDialog,quality,animated:avatarLoad}),setPosition:(x,z)=>player.position.set(x,0,z),acquireIndex:i=>acquire(shards[i]),getLocomotion:()=>({...locomotion,character: animatedActors.find(a=>a.role==='hero'&&a.premium)? {walkWeight:animatedActors.find(a=>a.role==='hero'&&a.premium)?.walk?.getEffectiveWeight(),runWeight:animatedActors.find(a=>a.role==='hero'&&a.premium)?.run?.getEffectiveWeight(),walkTime:animatedActors.find(a=>a.role==='hero'&&a.premium)?.walk?.time,runTime:animatedActors.find(a=>a.role==='hero'&&a.premium)?.run?.time,gait:animatedActors.find(a=>a.role==='hero'&&a.premium)?.costume?.getGait?.()}:null}),setAnalog:(x,f)=>{input.x=x;input.f=f},setSprint:(yes)=>{input.sprint=yes},setView:(a,b)=>{yaw=a;pitch=b},getCamera:()=>({distance:camera.position.distanceTo(player.position),camera:camera.position.toArray(),player:player.position.toArray()}),getCharacters:()=>animatedActors.map(a=>({role:a.role,premium:!!a.premium,variant:a.costume?.variant,removed:a.costume?.removedParts||[]})),renderer};
 

@@ -122,6 +122,27 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   }
  });
  const sandals=[];
+ // Small contact shadows let the player perceive alternating weight on sand.
+ const footShadows=[];
+ const shadowTextureCanvas=document.createElement('canvas');
+ shadowTextureCanvas.width=shadowTextureCanvas.height=64;
+ const shadowCtx=shadowTextureCanvas.getContext('2d');
+ const shadowGrad=shadowCtx.createRadialGradient(32,32,3,32,32,31);
+ shadowGrad.addColorStop(0,'rgba(45,31,18,.36)');
+ shadowGrad.addColorStop(.65,'rgba(45,31,18,.16)');
+ shadowGrad.addColorStop(1,'rgba(45,31,18,0)');
+ shadowCtx.fillStyle=shadowGrad;shadowCtx.fillRect(0,0,64,64);
+ const soleShadowTex=new THREE.CanvasTexture(shadowTextureCanvas);
+ for(let i=0;i<2;i++){
+   const shoeShadow=new THREE.Mesh(
+     new THREE.PlaneGeometry(.34,.50),
+     new THREE.MeshBasicMaterial({map:soleShadowTex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3})
+   );
+   shoeShadow.rotation.x=-Math.PI/2;shoeShadow.position.y=.045;
+   scene.add(shoeShadow);footShadows.push(shoeShadow);
+ }
+ const baseModelPosition=model.position.clone();
+ const baseModelRotationZ=model.rotation.z;
  const footState=[{z:0,lift:0,stance:true},{z:0,lift:0,stance:true}];
  let currentGait=0, currentWeight=0;
  function contactFoot(phase,offset,stepSize,stepLift) {
@@ -146,26 +167,33 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   bone.getWorldPosition(temp);
   return robeRoot.worldToLocal(temp.clone());
  }
- function tick(dt,elapsed,activity=0,gaitPhase=0){
+ function tick(dt,elapsed,activity=0,gaitPhase=0,runMix=0){
   const footL=getPosition(bones.LeftFoot,v3(-.22,.1,0));
   const footR=getPosition(bones.RightFoot,v3(.22,.1,0));
   const hip=getPosition(bones.Hips,v3(0,1.28,0));
   const amount=Math.max(0,Math.min(1,activity));
   currentGait=gaitPhase;currentWeight=amount;
-  const runAmount=Math.max(0,Math.min(1,(activity-.87)*4));
-  const footDistance=.68+runAmount*.24;
+  const runAmount=Math.max(0,Math.min(1,runMix));
+  const footDistance=.86+runAmount*.23;
   for(let j=0;j<2;j++){
-    const target=contactFoot(gaitPhase,j*Math.PI,footDistance,.16+runAmount*.075);
+    const target=contactFoot(gaitPhase,j*Math.PI,footDistance,.135+runAmount*.075);
     const blend=.2+amount*.8;
     footState[j]={z:target.z*blend,lift:target.lift*blend,stance:target.stance};
   }
   // Hips/cloth shift from one supporting leg to the other, instead of rigidly
   // sliding the entire silhouette over the ground.
-  const sway=(Math.sin(gaitPhase)*.035+Math.sin(gaitPhase+Math.PI*.5)*.011)*amount;
-  robeRoot.rotation.z=sway*.48;
-  robe.rotation.z=sway;
-  robe.rotation.x=.018*Math.sin(gaitPhase*2)*amount;
-  robe.rotation.z=sway;
+  const sway=(Math.sin(gaitPhase)*.033+Math.sin(gaitPhase+Math.PI*.5)*.009)*amount;
+  // Short double-support bounce: torso moves while each sole remains grounded.
+  const bob=(.018+.029*(.5+.5*Math.cos(2*gaitPhase)))*amount;
+  const lateral=.018*Math.sin(gaitPhase)*amount;
+  robeRoot.position.y=bob;
+  robeRoot.position.x=lateral;
+  model.position.y=baseModelPosition.y+bob;
+  model.position.x=baseModelPosition.x+lateral;
+  model.rotation.z=baseModelRotationZ+sway*.20;
+  robeRoot.rotation.z=sway*.42;
+  robe.rotation.z=sway*.5;
+  robe.rotation.x=.014*Math.sin(gaitPhase*2)*amount;
   const positions=hemPos.array;
   for(let i=0;i<positions.length;i+=3){
    const x=baseHem[i],y=baseHem[i+1],z=baseHem[i+2];
@@ -174,22 +202,30 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
    const foot=side===0?footL:footR;
    const theta=Math.atan2(x,z);
    const flutter=(.009*Math.sin(theta*9+gaitPhase*1.4)+.014*Math.sin(theta*4-gaitPhase))*heightEffect*amount;
-   const legF=(footState[side].z*.42+Math.max(-.07,Math.min(.07,foot.z*.025)))*heightEffect*amount;
+   const legF=(footState[side].z*.43+Math.max(-.07,Math.min(.07,foot.z*.025)))*heightEffect*amount;
    positions[i]=x+Math.min(.04,Math.max(-.04,foot.x*.05))*heightEffect*amount;
    positions[i+1]=y+(Math.sin(theta*7+gaitPhase)*.012+footState[side].lift*.22)*heightEffect*amount;
    positions[i+2]=z+(legF+flutter)*heightEffect;
   }
   hemPos.needsUpdate=true;robe.geometry.computeVertexNormals();
   hemTrim.position.z=(footL.z+footR.z)*.035;
+  const shadowPoint=new THREE.Vector3();
   for(let i=0;i<2;i++){
    const f=i===0?footL:footR;
    const contact=footState[i];
+   // The shoe sole can now peek from the front/back of the thobe at each stride.
+   // Shoes are counter-offset against torso bob so they do not hover with the chest.
    sandals[i].position.set(
-    (i===0?-.225:.225)+Math.min(.025,Math.max(-.025,f.x*.025))*amount,
-    .08+contact.lift,
-    -.115+contact.z
+    (i===0?-.265:.265)+Math.min(.02,Math.max(-.02,f.x*.025))*amount-lateral,
+    .073+contact.lift-bob,
+    -.10+contact.z*1.32
    );
-   sandals[i].rotation.x=contact.stance?0:-Math.sin((gaitPhase+i*Math.PI)%(Math.PI*2))*.18*amount;
+   sandals[i].rotation.x=contact.stance?0:-Math.sin((gaitPhase+i*Math.PI)%(Math.PI*2))*.17*amount;
+   sandals[i].updateWorldMatrix(true,false);
+   sandals[i].getWorldPosition(shadowPoint);
+   footShadows[i].position.set(shadowPoint.x,.043,shadowPoint.z);
+   footShadows[i].rotation.z=target.rotation.y;
+   footShadows[i].material.opacity=amount*(contact.stance?.86:.16);
   }
   if(bones.LeftArm&&bones.LeftHand&&bones.RightArm&&bones.RightHand){
    for(const [k,side] of ['Left','Right'].entries()){
@@ -212,6 +248,6 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
   for(const o of drapes)o.position.copy(off);
  }
  const shadow=makeGroundShadow(scene,target);
- return {...costume,removedParts,variant,getGait:()=>({phase:currentGait,weight:currentWeight,feet:footState.map(f=>({...f}))}),tick:(dt,t,activity=0,phase=0)=>{tick(dt,t,activity,phase);shadow(dt);}};
+ return {...costume,removedParts,variant,getGait:()=>({phase:currentGait,weight:currentWeight,feet:footState.map((f,i)=>({...f,shoe:sandals[i].position.toArray()}))}),tick:(dt,t,activity=0,phase=0,runMix=0)=>{tick(dt,t,activity,phase,runMix);shadow(dt);}};
 }
 
