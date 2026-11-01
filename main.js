@@ -3,7 +3,7 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {clone as cloneSkinned} from 'three/addons/utils/SkeletonUtils.js';
 import {attachSaudiHero} from './saudi-hero.js';
 import {createFootIK} from './foot-ik.js';
-import {targetSpeed, analogStrength, blendFactor, wrapAngle, cycleTime, WALK_SPEED, RUN_SPEED, WALK_STRIDE, RUN_STRIDE} from './locomotion.js';
+import {targetSpeed, analogStrength, blendFactor, wrapAngle, WALK_SPEED, RUN_SPEED, WALK_STRIDE, RUN_STRIDE} from './locomotion.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 
 // LEGEND OF THE OASIS — original browser adventure, built for touch and desktop.
@@ -602,7 +602,7 @@ function interact(){if(!active||inDialog||$('settings').classList.contains('acti
 
 // Controls: camera-relative velocity; stick up = forward, right = right
 const input={x:0,f:0,keys:new Set(),joyID:null,sprint:false};
-const locomotion={speed:0,targetSpeed:0,distance:0,turnDistance:0,pivotSpeed:0,input:0};
+const locomotion={speed:0,targetSpeed:0,distance:0,turnDistance:0,pivotSpeed:0,input:0,cycle:0,runMix:0};
 let yaw=0,pitch=.19,camDist=isMobile?8.15:10,jumpVelocity=0,vertical=0,velocity=new THREE.Vector3();
 function joystickMove(e){const rect=$('joystick').getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2,rad=rect.width*.34;
  const dx=clamp((e.clientX-cx)/rad,-1,1),dy=clamp((e.clientY-cy)/rad,-1,1),size=Math.hypot(dx,dy),scale=size>1?1/size:1;
@@ -662,10 +662,13 @@ let lastMap=0,lastNear=0;
 const clock=new THREE.Clock();
 function animate(){
  requestAnimationFrame(animate);
- const dt=Math.min(.05,clock.getDelta());t+=dt;
+ // Honor real frame time on slower devices. The old 50ms cap made the avatar
+ // continue drifting for seconds if rendering fell to a few FPS.
+ const dt=Math.min(.25,clock.getDelta());t+=dt;
  if(active&&!inDialog){
   const c=readControls();
   locomotion.pivotSpeed=0;
+  const oldTurnDistance=locomotion.turnDistance;
   const strength=analogStrength(c.x,c.f);
   const wantSpeed=targetSpeed(c.x,c.f,c.sprint);
   const invLen=strength>0?1/Math.max(.0001,Math.hypot(c.x,c.f)):0;
@@ -698,6 +701,12 @@ function animate(){
   const speed=dt>0?moved/dt:0;
   locomotion.speed=speed;locomotion.targetSpeed=wantSpeed;locomotion.input=strength;
   locomotion.distance+=moved;
+  // One continuous footstep phase survives walk/run transitions. Both clips,
+  // the real foot IK and the thobe must share precisely the same phase.
+  locomotion.runMix=ease(locomotion.runMix,c.sprint&&wantSpeed>WALK_SPEED*.85?1:0,blendFactor(7,dt));
+  const stride=WALK_STRIDE+(RUN_STRIDE-WALK_STRIDE)*locomotion.runMix;
+  const realStep=moved+Math.max(0,locomotion.turnDistance-oldTurnDistance);
+  locomotion.cycle+=realStep/stride;
   // No extra rotation from lagging velocity: the controls already turned the body.
   jumpVelocity-=19*dt;vertical=Math.max(0,vertical+jumpVelocity*dt);if(vertical===0)jumpVelocity=0;player.position.y=vertical;
   // Primitive fallback only; the animated character uses distance-synced skeletal motion.
@@ -711,7 +720,7 @@ function animate(){
    rig.rig.position.y=Math.abs(Math.sin(stepPhase))*.03*amount;
   }
   for(let sh of shards){if(!collected.has(sh.i)&&Math.hypot(player.position.x-sh.x,player.position.z-sh.z)<1.8)acquire(sh);}
- } else { velocity.multiplyScalar(Math.exp(-dt*14));locomotion.speed=0;locomotion.targetSpeed=0;locomotion.pivotSpeed=0;locomotion.input=0; }
+ } else { velocity.multiplyScalar(Math.exp(-dt*14));locomotion.speed=0;locomotion.targetSpeed=0;locomotion.pivotSpeed=0;locomotion.input=0;locomotion.runMix=ease(locomotion.runMix,0,blendFactor(9,dt)); }
  const lookAt=new THREE.Vector3(player.position.x,player.position.y+1.65,player.position.z);
  const dir=new THREE.Vector3(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
  const shoulder=new THREE.Vector3(Math.cos(yaw),0,Math.sin(yaw));
@@ -750,26 +759,28 @@ function animate(){
   if(a.role==='npc'&&!a.target.visible)continue;
   if(a.premium&&a.role==='hero'){
     const s=locomotion.speed;
-    // 1 gait cycle maps to 1.38 m walking, 2.35 m running. Pause exactly on stop.
+    // The same continuous cycle drives BOTH clips and the physical foot anchors.
     a.gaitDistance=locomotion.distance+locomotion.turnDistance;
+    const normalizedCycle=((locomotion.cycle%1)+1)%1;
+    const footPhase=normalizedCycle*Math.PI*2;
     const locomotionWeight=Math.min(1,Math.max(s/.52,locomotion.pivotSpeed/.5));
     a.weight=ease(a.weight,locomotionWeight,blendFactor(s>.02?9:13,dt));
-    a.runBlend=ease(a.runBlend,input.sprint&&s>WALK_SPEED*.85?1:0,blendFactor(7,dt));
+    a.runBlend=locomotion.runMix;
     if(a.walk){
       a.walk.setEffectiveTimeScale(0);
-      a.walk.time=cycleTime(a.gaitDistance,WALK_STRIDE,a.walk.getClip().duration);
+      a.walk.time=normalizedCycle*a.walk.getClip().duration;
       a.walk.setEffectiveWeight(a.weight*(1-a.runBlend));
     }
     if(a.run){
       a.run.setEffectiveTimeScale(0);
-      a.run.time=cycleTime(a.gaitDistance,RUN_STRIDE,a.run.getClip().duration);
+      a.run.time=normalizedCycle*a.run.getClip().duration;
       a.run.setEffectiveWeight(a.weight*a.runBlend);
     }
     // Mild pelvis compression keeps the knee/ankle chain within physical reach at stance.
     a.model.position.y=a.baseModelY-.16*a.weight;
     a.mixer.update(dt);
-    a.ik.update({phase:(locomotion.distance+locomotion.turnDistance)/WALK_STRIDE*Math.PI*2,weight:vertical>.09?0:a.weight*(1-a.runBlend*.35),dt,groundY:a.target.position.y});
-    a.costume.tick(dt,t,a.weight,(locomotion.distance+locomotion.turnDistance)/WALK_STRIDE*Math.PI*2,a.runBlend);
+    a.ik.update({phase:footPhase,weight:vertical>.09?0:a.weight*(1-a.runBlend*.35),dt,groundY:a.target.position.y});
+    a.costume.tick(dt,t,a.weight,footPhase,a.runBlend);
   }else if(a.premium){
     // Stationary NPCs do not play a slow walk cycle while standing.
     if(a.walk){a.walk.setEffectiveTimeScale(0);a.walk.setEffectiveWeight(0);}

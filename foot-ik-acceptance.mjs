@@ -20,6 +20,6 @@ const maxErr=Math.max(...errorSamples,0),mean=errorSamples.reduce((a,v)=>a+v,0)/
 console.log(JSON.stringify({structure,maxErr,mean,samples,errors:errs},null,2));
 assert.equal(errs.length,0);
 assert.ok(samples.some(x=>x.feet[0].stance!==x.feet[1].stance));
-assert.ok(mean<.14,'Foot IK mean contact error must be under 14cm');
-assert.ok(maxErr<.26,'Foot IK worst contact error must be under 26cm');
+assert.ok(mean<.06,'Foot IK mean contact error must be under 6cm');
+assert.ok(maxErr<.12,'Foot IK worst contact error must be under 12cm');
 await b.close();console.log('IK ACCEPTANCE PASS');

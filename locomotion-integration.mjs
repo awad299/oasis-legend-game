@@ -15,7 +15,11 @@ async function sample(stage,x,f,sprint,ms) {
  await new Promise(r=>setTimeout(r,ms));
  const after=await page.evaluate(()=>({state:window.__oasisDebug.getState(),m:window.__oasisDebug.getLocomotion()}));
  const meters=Math.hypot(after.state.x-before.state.x,after.state.z-before.state.z);
- const result={stage,meters:Number(meters.toFixed(3)),speed:Number(after.m.speed.toFixed(2)),target:Number(after.m.targetSpeed.toFixed(2)),gait:Number(after.m.distance.toFixed(3)),turn:Number(after.m.turnDistance.toFixed(3)),weight:after.m.character?.walkWeight,runWeight:after.m.character?.runWeight,walkTime:after.m.character?.walkTime,runTime:after.m.character?.runTime};
+ const clips=await page.evaluate(()=>{
+  const a=window.__oasisDebug.getActor();
+  return {walkPhase:a.walk.time/a.walk.getClip().duration,runPhase:a.run.time/a.run.getClip().duration};
+ });
+ const result={stage,...clips,meters:Number(meters.toFixed(3)),speed:Number(after.m.speed.toFixed(2)),target:Number(after.m.targetSpeed.toFixed(2)),gait:Number(after.m.distance.toFixed(3)),turn:Number(after.m.turnDistance.toFixed(3)),weight:after.m.character?.walkWeight,runWeight:after.m.character?.runWeight,walkTime:after.m.character?.walkTime,runTime:after.m.character?.runTime,cycle:after.m.cycle,runMix:after.m.runMix};
  console.log(JSON.stringify(result));
  return result;
 }
@@ -29,9 +33,20 @@ assert.ok(run.target>full.target*1.7,'run must request significantly faster move
 assert.equal(stop.target,0,'releasing stick must set target speed to zero');
 assert.ok(stop.runWeight<run.runWeight,'running animation should fade on release');
 for(const stage of [mild,full,run,stop]){
-  const predictedWalk=(((stage.gait+stage.turn)/1.55)%1+1)%1;
-  assert.ok(Math.abs(stage.walkTime-predictedWalk)<.002,'Walk clip phase must track distance, not elapsed time: '+stage.stage);
+  const expected=((stage.cycle%1)+1)%1;
+  assert.ok(Math.abs(stage.walkPhase-expected)<.001,'walk clip phase must match distance phase: '+stage.stage);
+  assert.ok(Math.abs(stage.runPhase-expected)<.001,'run clip phase must match distance phase: '+stage.stage);
+  assert.ok(Number.isFinite(stage.cycle),'step cycle must be finite');
+  assert.ok(stage.runMix>=0&&stage.runMix<=1,'running blend must stay bounded');
 }
+// Normalized phases must agree across BOTH animation clips even during sprint switch.
+const phaseAgreement=await page.evaluate(()=>{
+ const a=window.__oasisDebug.getActor();
+ const walk=a.walk.time/a.walk.getClip().duration;
+ const run=a.run.time/a.run.getClip().duration;
+ return Math.abs(walk-run);
+});
+assert.ok(phaseAgreement<.0001,'walk and run phases must stay synchronized');
 assert.ok(errors.length===0,'page should be error free');
 console.log('PASS motion integration',JSON.stringify({errors}));
 await browser.close();

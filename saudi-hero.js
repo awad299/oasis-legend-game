@@ -11,8 +11,8 @@ function sleeveBetween(start,end,sleeve,r=.145) {
  sleeve.scale.set(1,d.length(),1);
 }
 function robeGeometry() {
- const heights=[.18,.28,.47,.66,.94,1.22,1.55,1.8,2.07,2.22];
- const radii=[.49,.5,.47,.43,.40,.385,.36,.38,.44,.21];
+ const heights=[.34,.43,.56,.73,.97,1.22,1.55,1.8,2.07,2.22];
+ const radii=[.42,.445,.45,.43,.40,.385,.36,.38,.44,.21];
  const N=56;const xyz=[],uv=[],idx=[];
  for(let j=0;j<heights.length;j++) {
   for(let i=0;i<=N;i++){
@@ -122,9 +122,9 @@ export function attachSaudiHero({target,model,scene,clipName='walk',quality='med
  // Keep original shape data only for diagnostics, NOT for CPU vertex animation.
  const baseHem=null,hemPos=null;
  // Cloth is driven each frame by the animated hip/ankle skeleton, not a static rigid cylinder.
- const hemTrim=addMesh(robeRoot,new THREE.TorusGeometry(.49,.012,5,56),variant==='woman'?cloth(0x404b4c):cuffMat,0,.20,0);hemTrim.rotation.x=Math.PI/2;
+ const hemTrim=addMesh(robeRoot,new THREE.TorusGeometry(.42,.012,5,56),variant==='woman'?cloth(0x404b4c):cuffMat,0,.34,0);hemTrim.rotation.x=Math.PI/2;
  // Under-layer fills the garment opening so hidden thighs never flash through at a long stride.
- const liner=addMesh(robeRoot,new THREE.CylinderGeometry(.43,.455,.34,40,1,true),outfitMat,0,.24,0);
+ const liner=addMesh(robeRoot,new THREE.CylinderGeometry(.42,.425,.14,40,1,true),outfitMat,0,.41,0);
  liner.castShadow=false;
 
  const collar=addMesh(robeRoot,new THREE.TorusGeometry(.17,.026,8,28),cuffMat,0,2.175,-.05);collar.rotation.x=Math.PI/2;

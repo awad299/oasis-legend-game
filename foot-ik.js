@@ -15,7 +15,7 @@ export function createFootIK(model) {
  for(const leg of legs){
   leg.anchored=false;leg.contact=vec();leg.lastStance=false;leg.error=0;leg.applied=0;
  }
- const pJoint=vec(),pFoot=vec(),a=vec(),b=vec(),dq=quat(),qWorld=quat(),qParent=quat(),qLocal=quat(),baseFootQ=quat();
+ const pJoint=vec(),pFoot=vec(),a=vec(),b=vec(),dq=quat(),qWorld=quat(),qParent=quat(),baseFootQ=quat(),identity=quat();
  let debug={active:false,feet:[]};
  function solveJoint(joint,end,target,weight){
   joint.updateWorldMatrix(true,true);
@@ -24,7 +24,7 @@ export function createFootIK(model) {
   if(a.lengthSq()<1e-9||b.lengthSq()<1e-9)return;
   a.normalize();b.normalize();
   dq.setFromUnitVectors(a,b);
-  const identity=quat();dq.slerp(identity,1-Math.min(.82,Math.max(0,weight)));
+  dq.slerp(identity,1-Math.min(1,Math.max(0,weight)));
   joint.getWorldQuaternion(qWorld);
   qWorld.premultiply(dq);
   joint.parent.getWorldQuaternion(qParent);
@@ -50,9 +50,9 @@ export function createFootIK(model) {
     // A planted foot has a fixed WORLD-space position while the root advances.
     const desired=leg.contact;
     leg.foot.getWorldQuaternion(baseFootQ);
-    for(let i=0;i<5;i++){
+    for(let i=0;i<12;i++){
       solveJoint(leg.knee,leg.foot,desired,amount);
-      solveJoint(leg.upper,leg.foot,desired,amount*.83);
+      solveJoint(leg.upper,leg.foot,desired,amount);
     }
     leg.foot.getWorldPosition(pFoot);
     leg.error=pFoot.distanceTo(desired);
