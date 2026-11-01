@@ -1,0 +1,30 @@
+import puppeteer from 'puppeteer-core';
+import assert from 'node:assert/strict';
+const browser=await puppeteer.launch({headless:true,executablePath:'/usr/bin/google-chrome',args:['--no-sandbox','--disable-dev-shm-usage','--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader']});
+try{
+  const page=await browser.newPage();
+  await page.setViewport({width:412,height:915,isMobile:true,hasTouch:true,deviceScaleFactor:1});
+  const errors=[],missing=[];
+  page.on('pageerror',e=>errors.push(String(e)));
+  page.on('response',r=>{if(r.status()>=400)missing.push(r.status()+':'+r.url());});
+  await page.goto('https://awad299.github.io/oasis-legend-game/?smoke=v9',{waitUntil:'domcontentloaded',timeout:40000});
+  await page.waitForFunction(()=>window.__oasisDebug?.getState()?.animated?.premium,{timeout:55000});
+  const label=await page.$eval('.micro',el=>el.textContent);
+  assert.ok(label.includes('الإصدار ٩'),'Live page must show v9');
+  const assets=await page.evaluate(()=>window.__oasisDebug.getState().animated);
+  assert.equal(assets.premium,true);
+  await page.click('#start');
+  const before=await page.evaluate(()=>window.__oasisDebug.getState());
+  await page.evaluate(()=>window.__oasisDebug.setAnalog(0,1));
+  await new Promise(r=>setTimeout(r,2200));
+  const moved=await page.evaluate(()=>window.__oasisDebug.getState());
+  await page.evaluate(()=>window.__oasisDebug.setAnalog(0,0));
+  await new Promise(r=>setTimeout(r,1400));
+  const stopped=await page.evaluate(()=>window.__oasisDebug.getLocomotion());
+  const meters=Math.hypot(before.x-moved.x,before.z-moved.z);
+  assert.ok(meters>.06,'movement must work in production');
+  assert.equal(stopped.targetSpeed,0);
+  assert.equal(errors.length,0);
+  assert.equal(missing.length,0);
+  console.log(JSON.stringify({version:label,premium:assets.premium,saudiNPCs:assets.saudiNPCs,movedMeters:Number(meters.toFixed(2)),releasedTargetSpeed:stopped.targetSpeed,errors,missing,live:true}));
+} finally {await browser.close();}

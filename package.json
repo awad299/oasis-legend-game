@@ -7,7 +7,9 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node smoke-test.mjs"
+    "test": "node smoke-test.mjs",
+    "test:movement": "node locomotion-unit.mjs && node locomotion-integration.mjs && node pivot-test.mjs && node shoe-gait-test.mjs && node foot-ik-acceptance.mjs",
+    "test:live": "node live-v9-smoke.mjs"
   },
   "dependencies": {
     "three": "0.169.0"
